@@ -324,7 +324,7 @@ export default function App() {
   ];
 
   const steps = [
-    { title: 'z Profitable Properties', text: 'On- and off-market acquisition playbook: agent MLS alerts, price-reduction snipes, pre-foreclosures, probates, wholesaler lists, driving for dollars, and direct-to-seller outreach.' },
+    { title: 'Find Profitable Properties', text: 'On- and off-market acquisition playbook: agent MLS alerts, price-reduction snipes, pre-foreclosures, probates, wholesaler lists, driving for dollars, and direct-to-seller outreach.' },
     { title: 'Underwrite the Deal', text: 'ARV comps, scope & budget, repair cost ranges, timeline, soft vs. hard costs, hold costs, interest, and exit scenarios — all distilled into a simple go/no-go matrix.' },
     { title: 'Structure the Deal', text: 'Debt/equity mixes, JV splits, operating agreements, draws, interest reserves, and risk allocation that protects the downside and preserves upside.' },
     { title: 'Finance Your Deal', text: 'Get access to the right funding strategy for your flip — hard money, private lenders, equity partners, HELOCs, or gap funding. Learn how to model interest-only loans, calculate reserves, and prepare a solid borrower package.' },
