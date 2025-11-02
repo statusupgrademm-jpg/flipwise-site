@@ -1,3 +1,5 @@
+permissions:
+  contents: write
 name: Ingest Blog Post
 on:
   workflow_dispatch:
@@ -10,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0         # so we can push back cleanly
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -22,11 +26,14 @@ jobs:
           CLOUDINARY_URL: ${{ secrets.CLOUDINARY_URL }}
         run: node scripts/ingest-url.mjs '${{ github.event.inputs.url }}'
       - name: Commit new content
+        env:
+          BRANCH: ${{ github.ref_name }}   # usually 'main' for workflow_dispatch
         run: |
           git config user.name "flipwise-bot"
           git config user.email "bot@users.noreply.github.com"
           git add public/content
           git commit -m "chore(blog): ingest ${{ github.event.inputs.url }}" || echo "No changes"
-          git push
+          git pull --rebase origin "$BRANCH" || true
+          git push origin HEAD:"$BRANCH"
       - name: Trigger Netlify build
         run: curl -X POST '${{ secrets.NETLIFY_BUILD_HOOK }}'
