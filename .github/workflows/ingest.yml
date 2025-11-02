@@ -1,0 +1,32 @@
+name: Ingest Blog Post
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Source article URL'
+        required: true
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install deps
+        run: npm i jsdom @mozilla/readability node-fetch openai cloudinary
+      - name: Ingest URL → JSON post + image
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          CLOUDINARY_URL: ${{ secrets.CLOUDINARY_URL }}
+        run: node scripts/ingest-url.mjs '${{ github.event.inputs.url }}'
+      - name: Commit new content
+        run: |
+          git config user.name "flipwise-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add public/content
+          git commit -m "chore(blog): ingest ${{ github.event.inputs.url }}" || echo "No changes"
+          git push
+      - name: Trigger Netlify build
+        run: curl -X POST '${{ secrets.NETLIFY_BUILD_HOOK }}'
