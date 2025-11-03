@@ -2,7 +2,7 @@ import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 /***************************
- * Utilities (defensive)
+ * Utilities (defensive) !
  ***************************/
 function isNonEmptyString(v) {
   return typeof v === 'string' && v.trim().length > 0;
