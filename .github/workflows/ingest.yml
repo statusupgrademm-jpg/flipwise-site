@@ -24,6 +24,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
           CLOUDINARY_URL: ${{ secrets.CLOUDINARY_URL }}
+          UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
         run: node scripts/ingest-url.mjs '${{ github.event.inputs.url }}'
       - name: Commit new content
         env:
