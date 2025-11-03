@@ -195,7 +195,7 @@ function BlogCard({ post, onOpen }) {
           className="w-full h-full object-cover"
           decoding="async"
         />
-        <div className="absolute inset-0 bg-black/35" />
+        <div className="absolute inset-0 bg-black/50" />
       </div>
 
       {/* Foreground content */}
