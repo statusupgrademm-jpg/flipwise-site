@@ -309,11 +309,66 @@ function BlogPost({ post, calendlyUrl, navigate }) {
   );
 }
 
+// --- Load posts from JSON written by the automation ---
+function usePosts() {
+  const [posts, setPosts] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    (async () => {
+      try {
+        // 1) read meta index
+        const meta = await fetch('/content/index.json', { cache: 'no-store' }).then(r => r.json());
+        // 2) fetch each full post
+        const full = await Promise.all(
+          meta.map(m => fetch(`/content/posts/${m.slug}.json`, { cache: 'no-store' }).then(r => r.json()))
+        );
+        setPosts(full);
+      } catch (e) {
+        console.error('Failed to load dynamic posts, falling back to local seed', e);
+        // Optional: keep a tiny local fallback so Blog isn’t empty if fetch fails
+        setPosts([
+          {
+            slug: 'qualify-gc',
+            title: 'How to Qualify a General Contractor',
+            date: '2025-10-28',
+            excerpt: 'Licensing, insurance, references, bids, and contracts — a due-diligence checklist for picking the right GC.',
+            image: 'https://res.cloudinary.com/dfr4brde4/image/upload/v1761695680/P1_Main_by48b2.jpg',
+            content: [
+              { type: 'subheader', text: '1. Licensing' },
+              { type: 'paragraph', text: "Before hiring a general contractor (GC), verify that they hold a valid state contractor’s license..." }
+            ],
+          },
+          {
+            slug: 'when-to-hire-architect',
+            title: 'When to Hire an Architect',
+            date: '2025-10-31',
+            excerpt: 'Not every flip needs an architect. Here’s when a draftsman or engineer is enough — and when full architectural plans will save you time, money, and permit headaches.',
+            image: 'https://res.cloudinary.com/dfr4brde4/image/upload/v1761970997/plans_close_up_image_resized_o4lk6i.jpg',
+            content: [
+              { type: 'subheader', text: 'Quick Take' },
+              { type: 'paragraph', text: 'Architects are essential when your project changes structure, layout, or footprint...' }
+            ],
+          }
+        ]);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  return { posts, loading };
+}
+
+
 /***************************
  * App (router + pages) 
  ***************************/
 export default function App() {
   const calendlyUrl = 'https://calendly.com/statusupgrademm/30min';
+
+  // NEW: load posts from /content
+  const { posts, loading } = usePosts();
 
   // Gallery for hero
   const gallery = [
@@ -408,142 +463,6 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
-  // Blog seed
-  const posts = [
-    {
-      slug: 'qualify-gc',
-      title: 'How to Qualify a General Contractor',
-      date: '2025-10-28',
-      excerpt: 'Licensing, insurance, references, bids, and contracts — a due‑diligence checklist for picking the right GC.',
-      image: 'https://res.cloudinary.com/dfr4brde4/image/upload/v1761695680/P1_Main_by48b2.jpg',
-      content: [
-        { type: 'subheader', text: '1. Licensing' },
-        { type: 'paragraph', text: "Before hiring a general contractor (GC), verify that they hold a valid state contractor’s license. This ensures they’ve met local professional standards and are accountable to a licensing board if something goes wrong. Each state maintains its own licensing authority where you can verify license status and check for disciplinary actions or complaints." },
-        { type: 'subheader', text: 'Checklist' },
-        { type: 'list', items: [
-          'License is active and valid in your state',
-          'No violations or complaints listed with the state board',
-        ] },
-
-        { type: 'subheader', text: '2. Insurance' },
-        { type: 'paragraph', text: "Every qualified GC should carry both general liability insurance and workers’ compensation coverage. Liability insurance protects you from property damage or accidents during construction, while workers’ comp ensures you’re not liable if someone is injured on your property. Ask for certificates of insurance and confirm their validity directly with the insurance providers." },
-        { type: 'subheader', text: 'Checklist' },
-        { type: 'list', items: [
-          'Proof of liability insurance',
-          'Proof of workers’ compensation insurance',
-          'Policies verified as active',
-        ] },
-
-        { type: 'subheader', text: '3. Experience and Expertise' },
-        { type: 'paragraph', text: "Select a GC who’s been active in your region for several years. Local experience matters — it means they understand building codes, permitting processes, and materials suited for the local climate. It also indicates strong working relationships with reliable subcontractors such as electricians, plumbers, and engineers. Make sure the contractor has direct experience with your type of project (e.g., new construction, remodel, or restoration). Verify this through client references, online reviews, and project photos. Multiple unresolved complaints or company name changes can signal problems." },
-        { type: 'subheader', text: 'Checklist' },
-        { type: 'list', items: [
-          'Minimum five years of local experience',
-          'Proven track record with similar projects',
-          'Solid online and client references',
-          'No unresolved or repeated complaints',
-        ] },
-
-        { type: 'subheader', text: '4. Oversight and Subcontractor Management' },
-        { type: 'paragraph', text: "Ask how the GC manages labor — do they have their own in-house crew, or do they rely mostly on subcontractors? Each approach has pros and cons: in-house teams offer consistency, while subcontractors may provide specialized skills. Confirm that all workers, whether in-house or subcontracted, are covered under workers’ compensation. Also, find out who will supervise the day-to-day work — the GC themselves or a dedicated project manager." },
-        { type: 'subheader', text: 'Checklist' },
-        { type: 'list', items: [
-          'Workers’ comp covers all workers',
-          'Defined on-site supervision plan',
-          'Balanced mix of in-house and subcontracted work',
-        ] },
-
-        { type: 'subheader', text: '5. Permits, Approvals, and Communication' },
-        { type: 'paragraph', text: "A qualified GC should handle all necessary permits, inspections, and approvals from your city or county. They are responsible for ensuring the project complies with building codes and for obtaining the Certificate of Occupancy (or local equivalent) once construction is complete. The GC should also provide consistent communication about project progress, inspection schedules, and any permitting delays. Some use apps or portals to keep clients updated." },
-        { type: 'subheader', text: 'Checklist' },
-        { type: 'list', items: [
-          'GC manages all required permits and final occupancy certificates',
-          'Regular progress updates through agreed communication method',
-        ] },
-
-        { type: 'subheader', text: '6. Payment Schedule' },
-        { type: 'paragraph', text: "Reputable GCs follow milestone-based payment schedules rather than demanding full payment upfront. Typically, you’ll pay a small deposit followed by incremental payments tied to project stages such as foundation, framing, and completion. Many states cap upfront payments — often around 10% of the total project cost or a specific dollar limit — to protect homeowners. Always hold the final payment until the project is fully completed to your satisfaction." },
-        { type: 'subheader', text: 'Checklist' },
-        { type: 'list', items: [
-          'Deposit amount complies with state law',
-          'Payments linked to clear milestones',
-          'Final payment only after completion',
-        ] },
-
-        { type: 'subheader', text: '7. Contract Essentials' },
-        { type: 'paragraph', text: "Your construction contract should be clear, detailed, and comprehensive. It should outline the full scope of work, cost breakdowns, and project timeline. It should also include payment schedule and milestones; terms for change orders and markups; proof and requirements for workers’ compensation; contractor’s obligation to secure all permits and final approvals; roles and responsibilities for project management; warranty or workmanship guarantee (many states require 1–10 years depending on work type); and completion or performance guarantee. A strong, transparent contract protects both parties and sets clear expectations from start to finish." }
-      ],
-    },
-    {
-  slug: 'when-to-hire-architect',
-  title: 'When to Hire an Architect',
-  date: '2025-10-31',
-  excerpt: 'Not every flip needs an architect. Here’s when a draftsman or engineer is enough — and when full architectural plans will save you time, money, and permit headaches.',
-  image: 'https://res.cloudinary.com/dfr4brde4/image/upload/v1761970997/plans_close_up_image_resized_o4lk6i.jpg',
-  content: [
-    { type: 'subheader', text: 'Quick Take' },
-    { type: 'paragraph', text: 'Architects are essential when your project changes structure, layout, or footprint. For light cosmetic work, you can skip them. Mid-scope jobs may only need a draftsman plus a structural engineer.' },
-
-    { type: 'subheader', text: 'When You Do Not Need an Architect' },
-    { type: 'paragraph', text: 'Purely cosmetic scopes do not require architectural design or stamped drawings.' },
-    { type: 'list', items: [
-      'Paint, flooring, trim, fixtures, cabinets',
-      'Bathroom/kitchen refresh without moving walls or plumbing',
-      'Roof or window replacements in the same size/location',
-      'Minor exterior cleanup and landscaping'
-    ]},
-
-    { type: 'subheader', text: 'When a Draftsman (+ Engineer) Is Enough' },
-    { type: 'paragraph', text: 'Simple layout tweaks with limited structural impact are often handled by a draftsman, with a structural engineer stamping calculations as needed.' },
-    { type: 'list', items: [
-      'Removing a non-load-bearing wall',
-      'Small partition/closet additions',
-      'Opening a pass-through between kitchen and living room',
-      'Expanding a bathroom within existing square footage'
-    ]},
-
-    { type: 'subheader', text: 'When You Do Need an Architect' },
-    { type: 'paragraph', text: 'The city will require permit drawings and coordination across disciplines when the scope affects structure, egress, or footprint.' },
-    { type: 'list', items: [
-      'Removing load-bearing walls; adding beams/columns; reframing',
-      'Additions or ADUs; converting garage to conditioned space',
-      'New openings in new locations (windows, doors, skylights)',
-      'Major plan changes (kitchen relocation, new bathrooms, open concept)',
-      'Second stories, new foundations, multifamily or commercial conversions'
-    ]},
-
-    { type: 'subheader', text: 'Architects Work With Engineers and Consultants' },
-    { type: 'paragraph', text: 'Expect your architect to coordinate structural, civil, and MEP engineers, plus energy/code consultants (Title 24 in CA or IECC elsewhere) to deliver a permit-ready set.' },
-    { type: 'list', items: [
-      'Structural engineer: beams, load paths, framing',
-      'Civil engineer: grading, drainage, utilities/site',
-      'MEP engineers: HVAC, electrical, plumbing',
-      'Energy compliance: Title 24 (CA) or IECC/REScheck (most states)'
-    ]},
-
-    { type: 'subheader', text: 'Payment & Proposal Basics' },
-    { type: 'paragraph', text: 'Architect fees are typically milestone-based (concept → schematic → permit submittal → construction support). Confirm who pays for engineering and permit responses.' },
-    { type: 'list', items: [
-      'Upfront retainer (often 10–20%)',
-      'Milestones tied to deliverables (not dates only)',
-      'Clarify inclusions: engineering, revisions, agency responses, site visits'
-    ]},
-
-    { type: 'subheader', text: 'Contract Essentials' },
-    { type: 'paragraph', text: 'Your agreement should define scope, schedule, coordination duties, and change-order handling to avoid delays and surprise costs.' },
-    { type: 'list', items: [
-      'Detailed scope of services and deliverables',
-      'Who handles consultants and permit corrections',
-      'Timeline with submittal targets and review windows',
-      'Insurance/licensing, termination, and dispute terms'
-    ]},
-
-    { type: 'subheader', text: 'Bottom Line' },
-    { type: 'paragraph', text: 'If the scope is finishes-only, skip an architect. If structure, layout, or footprint are changing, hire one early and let them quarterback engineering so your permits pass cleanly.' }
-  ]
-}
-    
-  ];
 
   const openPost = (post) => navigate(`#/blog/${post.slug}`);
 
@@ -684,13 +603,19 @@ export default function App() {
           </>
         )}
 
-        {route.kind === 'blog' && (
-          <BlogIndex posts={posts} onOpen={openPost} />
-        )}
+      {route.kind === 'blog' && (
+    loading
+      ? <section className="py-16 md:py-24"><div className="max-w-6xl mx-auto px-4"><p>Loading posts…</p></div></section>
+      : <BlogIndex posts={posts} onOpen={openPost} />
+  )}
 
         {route.kind === 'post' && (
-          <BlogPost post={posts.find((p) => p.slug === route.slug)} calendlyUrl={calendlyUrl} navigate={navigate} />
-        )}
+    <BlogPost
+      post={posts.find((p) => p.slug === route.slug)}
+      calendlyUrl={calendlyUrl}
+      navigate={navigate}
+    />
+  )}
       </main>
 
       {/* Footer */}
