@@ -101,8 +101,6 @@ async function getImageUrlForPost(slug, title) {
   const rewritten = await rewrite({ title: raw.title, body: raw.content });
   const slug = slugify(rewritten.title);
   const image = await getImageUrlForPost(slug, rewritten.title);
-  // const date = new Date().toISOString().slice(0,10);
-  
   // --- NEW DATE LOGIC STARTS HERE ---
   const nowIso = new Date().toISOString();
   let createdAt = nowIso;
@@ -114,7 +112,6 @@ async function getImageUrlForPost(slug, title) {
       createdAt = prev.createdAt || prev.date || createdAt;
     } catch {}
   }
-  // --- NEW DATE LOGIC ENDS HERE ---
 
 
   
@@ -124,7 +121,6 @@ async function getImageUrlForPost(slug, title) {
     title: rewritten.title,
     createdAt,
     updatedAt: nowIso,
-    // date,
     excerpt: rewritten.excerpt,
     image,
     content: rewritten.content

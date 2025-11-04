@@ -325,15 +325,10 @@ function usePosts() {
     (async () => {
       try {
         const q = `?v=${Date.now()}`
-        // 1) read meta index
-        // const meta = await fetch('/content/index.json', { cache: 'no-store' }).then(r => r.json());
         const meta = await fetch(`/content/index.json${q}`, { cache: 'no-store' }).then(r => r.json());
-        // 2) fetch each full post
         const full = await Promise.all(
-          // meta.map(m => fetch(`/content/posts/${m.slug}.json`, { cache: 'no-store' }).then(r => r.json()))
           meta.map(m => fetch(`/content/posts/${m.slug}.json${q}`, { cache: 'no-store' }).then(r => r.json()))
         );
-        // setPosts(full);
         setPosts(full.sort((a, b) => {
    const da = new Date(a.updatedAt || a.createdAt || a.date || 0).getTime();
    const db = new Date(b.updatedAt || b.createdAt || b.date || 0).getTime();
