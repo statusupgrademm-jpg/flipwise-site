@@ -5,6 +5,7 @@ import OpenAI from 'openai';
 import cloudinary from 'cloudinary';
 import { writeFile } from 'node:fs/promises';
 import { writePost } from './new-post.mjs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const SOURCE_URL = process.argv[2];
 if (!SOURCE_URL) { console.error('Usage: node scripts/ingest-url.mjs <url>'); process.exit(1); }
@@ -100,12 +101,30 @@ async function getImageUrlForPost(slug, title) {
   const rewritten = await rewrite({ title: raw.title, body: raw.content });
   const slug = slugify(rewritten.title);
   const image = await getImageUrlForPost(slug, rewritten.title);
-  const date = new Date().toISOString().slice(0,10);
+  // const date = new Date().toISOString().slice(0,10);
+  
+  // --- NEW DATE LOGIC STARTS HERE ---
+  const nowIso = new Date().toISOString();
+  let createdAt = nowIso;
+  const postPath = `public/content/posts/${slug}.json`;
+
+  if (existsSync(postPath)) {
+    try {
+      const prev = JSON.parse(readFileSync(postPath, 'utf8'));
+      createdAt = prev.createdAt || prev.date || createdAt;
+    } catch {}
+  }
+  // --- NEW DATE LOGIC ENDS HERE ---
+
+
+  
 
   await writePost({
     slug,
     title: rewritten.title,
-    date,
+    createdAt,
+    updatedAt: nowIso,
+    // date,
     excerpt: rewritten.excerpt,
     image,
     content: rewritten.content

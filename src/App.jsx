@@ -43,6 +43,13 @@ function sanitizeContent(raw) {
     });
 }
 
+function getDisplayDate(p) {
+  const u = p?.updatedAt ? new Date(p.updatedAt) : null;
+  const c = p?.createdAt ? new Date(p.createdAt) : (p?.date ? new Date(p.date) : null);
+  const d = u && (!c || u > c) ? u : c;
+  return d ? d.toLocaleDateString() : '';
+}
+
 function safePostShape(post) {
   if (!post || typeof post !== 'object') return null;
   const title = isNonEmptyString(post.title) ? post.title : 'Untitled';
@@ -201,7 +208,7 @@ function BlogCard({ post, onOpen }) {
       {/* Foreground content */}
       <div className="relative p-5 flex flex-col flex-1 text-white">
         <h3 className="text-lg font-semibold drop-shadow-sm">{p.title}</h3>
-        <p className="text-xs text-neutral-200 mt-1">{new Date(p.date).toLocaleDateString()}</p>
+        <p className="text-xs text-neutral-200 mt-1">{getDisplayDate(p)}</p>
         <p className="text-sm text-neutral-100 mt-3 flex-1 drop-shadow-sm">{p.excerpt}</p>
         <button
           type="button"
@@ -258,7 +265,7 @@ function BlogPost({ post, calendlyUrl, navigate }) {
             ← Back
           </button>
           <div>
-            <p className="text-xs text-neutral-500">{new Date(p.date).toLocaleDateString()}</p>
+            <p className="text-xs text-neutral-500">{getDisplayDate(p)}</p>
             <h1 className="text-3xl md:text-4xl font-semibold tracking-tight mt-1">{p.title}</h1>
           </div>
         </header>
@@ -317,13 +324,21 @@ function usePosts() {
   React.useEffect(() => {
     (async () => {
       try {
+        const q = `?v=${Date.now()}`
         // 1) read meta index
-        const meta = await fetch('/content/index.json', { cache: 'no-store' }).then(r => r.json());
+        // const meta = await fetch('/content/index.json', { cache: 'no-store' }).then(r => r.json());
+        const meta = await fetch(`/content/index.json${q}`, { cache: 'no-store' }).then(r => r.json());
         // 2) fetch each full post
         const full = await Promise.all(
-          meta.map(m => fetch(`/content/posts/${m.slug}.json`, { cache: 'no-store' }).then(r => r.json()))
+          // meta.map(m => fetch(`/content/posts/${m.slug}.json`, { cache: 'no-store' }).then(r => r.json()))
+          meta.map(m => fetch(`/content/posts/${m.slug}.json${q}`, { cache: 'no-store' }).then(r => r.json()))
         );
-        setPosts(full);
+        // setPosts(full);
+        setPosts(full.sort((a, b) => {
+   const da = new Date(a.updatedAt || a.createdAt || a.date || 0).getTime();
+   const db = new Date(b.updatedAt || b.createdAt || b.date || 0).getTime();
+   return db - da;
+ }));
       } catch (e) {
         console.error('Failed to load dynamic posts, falling back to local seed', e);
         // Optional: keep a tiny local fallback so Blog isn’t empty if fetch fails
