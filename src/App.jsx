@@ -1,22 +1,21 @@
-import React from "react";
+import { useState, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { Clock, Mail, Phone, CheckCircle2 } from "lucide-react";
 
 /***************************
- * Utilities (defensive) !
+ * Utilities (defensive)
  ***************************/
 function isNonEmptyString(v) {
   return typeof v === 'string' && v.trim().length > 0;
 }
 
-// Normalize any arbitrary content array to safe renderable blocks
 function sanitizeContent(raw) {
   if (!Array.isArray(raw)) return [];
   const stripLeadNums = (s) => String(s ?? '').replace(/^\s*\d+[\.)]?\s*/, '');
   return raw
     .map((b) => {
-      if (!b) return null; // drop null/undefined
+      if (!b) return null;
       
-      // List block
       if (typeof b === 'object' && b.type === 'list' && Array.isArray(b.items)) {
         return {
           type: 'list',
@@ -24,17 +23,14 @@ function sanitizeContent(raw) {
         };
       }
       
-      // Already a block?
       if (typeof b === 'object' && (b.type === 'subheader' || b.type === 'paragraph')) {
         return { type: b.type, text: stripLeadNums(b.text) };
       }
       
-      // Unknown object with a text field
       if (typeof b === 'object' && 'text' in b) {
         return { type: 'paragraph', text: stripLeadNums(b.text) };
       }
       
-      // Primitive -> paragraph
       return { type: 'paragraph', text: stripLeadNums(b) };
     })
     .filter((b) => {
@@ -66,8 +62,8 @@ function safePostShape(post) {
  ***************************/
 function SmartImage({ src, fallbackSrc, alt = '', className = '', ...rest }) {
   const initial = isNonEmptyString(src) ? src : fallbackSrc;
-  const [current, setCurrent] = React.useState(initial);
-  const [usedFallback, setUsedFallback] = React.useState(!isNonEmptyString(src));
+  const [current, setCurrent] = useState(initial);
+  const [usedFallback, setUsedFallback] = useState(!isNonEmptyString(src));
 
   return (
     <img
@@ -89,7 +85,6 @@ function getPostFallback(postLike) {
   const slug = postLike && typeof postLike === 'object' && isNonEmptyString(postLike.slug)
     ? postLike.slug.trim()
     : '';
-  // Try slug‑based asset first, then generic fallback
   return slug ? `/assets/${slug}.jpg` : `/assets/post-fallback.jpg`;
 }
 
@@ -97,8 +92,8 @@ function getPostFallback(postLike) {
  * Before/After Slider (Home hero)
  ***************************/
 function BeforeAfterSlider({ item }) {
-  const [pos, setPos] = React.useState(50);
-  const trackRef = React.useRef(null);
+  const [pos, setPos] = useState(50);
+  const trackRef = useRef(null);
 
   const clamp = (v) => Math.min(100, Math.max(0, v));
   const percentFromClientX = (clientX) => {
@@ -127,7 +122,7 @@ function BeforeAfterSlider({ item }) {
   return (
     <div
       ref={trackRef}
-      className="relative w-full h-full select-none"
+      className="relative w-full h-full select-none overflow-hidden rounded-lg"
       onClick={(e) => setPos(percentFromClientX(e.clientX))}
       role="region"
       aria-label="Before and after comparison"
@@ -192,9 +187,8 @@ function BlogCard({ post, onOpen }) {
   if (!p) return null;
   const fallback = getPostFallback(p);
   return (
-    <article className="relative rounded-2xl overflow-hidden border border-neutral-200 shadow-sm flex flex-col">
-      {/* Background image using SmartImage so broken Cloudinary falls back to local */}
-      <div className="absolute inset-0">
+    <article className="overflow-hidden hover-elevate active-elevate-2 transition-all h-full flex flex-col rounded-lg border border-border bg-card shadow-sm">
+      <div className="aspect-video relative overflow-hidden">
         <SmartImage
           src={p.image}
           fallbackSrc={fallback}
@@ -202,21 +196,20 @@ function BlogCard({ post, onOpen }) {
           className="w-full h-full object-cover"
           decoding="async"
         />
-        <div className="absolute inset-0 bg-black/70" />
       </div>
-
-      {/* Foreground content */}
-      <div className="relative p-5 flex flex-col flex-1 text-white">
-        <h3 className="text-lg font-semibold drop-shadow-sm">{p.title}</h3>
-        <p className="text-xs text-neutral-200 mt-1">{getDisplayDate(p)}</p>
-        <p className="text-sm text-neutral-100 mt-3 flex-1 drop-shadow-sm">{p.excerpt}</p>
+      
+      <div className="p-6 flex-1 flex flex-col">
+        <h3 className="text-xl font-bold mb-2 line-clamp-2">{p.title}</h3>
+        <p className="text-sm text-muted-foreground mb-2">{getDisplayDate(p)}</p>
+        <p className="text-muted-foreground line-clamp-3 mb-4 flex-1">{p.excerpt}</p>
+        
         <button
           type="button"
           onClick={() => typeof onOpen === 'function' ? onOpen(p) : null}
-          className="mt-4 self-start rounded-xl border border-white/80 px-4 py-2 text-sm hover:bg-white/20 backdrop-blur"
+          className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none ring-offset-background border border-input hover-elevate active-elevate-2 h-9 px-4 py-2 w-full"
           aria-label={`Read: ${p.title}`}
         >
-          Read
+          Read More →
         </button>
       </div>
     </article>
@@ -226,11 +219,15 @@ function BlogCard({ post, onOpen }) {
 function BlogIndex({ posts, onOpen }) {
   const list = Array.isArray(posts) ? posts : [];
   return (
-    <section id="blog" className="py-16 md:py-24">
-      <div className="max-w-6xl mx-auto px-4">
-        <h2 className="text-3xl md:text-4xl font-semibold tracking-tight">Blog</h2>
-        <p className="mt-4 text-neutral-700">Guides, checklists, and playbooks from active deals.</p>
-        <div className="mt-10 grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <section id="blog" className="py-16 md:py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="text-center mb-12">
+          <h2 className="text-3xl md:text-4xl font-bold mb-4">Blog</h2>
+          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+            Guides, checklists, and playbooks from active deals
+          </p>
+        </div>
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           {list.map((raw) => {
             const p = safePostShape(raw);
             return <BlogCard key={p.slug} post={p} onOpen={onOpen} />;
@@ -254,113 +251,104 @@ function BlogPost({ post, calendlyUrl, navigate }) {
   }
 
   return (
-    <article className="py-16 md:py-24">
-      <div className="max-w-3xl mx-auto px-4">
-        <header className="mb-6 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => typeof navigate === 'function' ? navigate('#/blog') : null}
-            className="rounded-full border border-neutral-300 px-3 py-1 text-sm hover:bg-neutral-100 mt-6"
-          >
-            ← Back
-          </button>
-          <div>
-            <p className="text-xs text-neutral-500">{getDisplayDate(p)}</p>
-            <h1 className="text-3xl md:text-4xl font-semibold tracking-tight mt-1">{p.title}</h1>
+    <article className="py-12 bg-background">
+      <div className="max-w-3xl mx-auto px-6">
+        <button
+          type="button"
+          onClick={() => typeof navigate === 'function' ? navigate('#/blog') : null}
+          className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:pointer-events-none hover-elevate active-elevate-2 h-9 px-4 py-2 mb-6"
+        >
+          ← Back to Blog
+        </button>
+
+        <div className="mb-8">
+          <h1 className="text-4xl md:text-5xl font-bold mb-6">{p.title}</h1>
+          <div className="flex items-center gap-6 text-muted-foreground">
+            <span className="text-sm">{getDisplayDate(p)}</span>
           </div>
-        </header>
+        </div>
+
         {isNonEmptyString(p.image) && (
-          <SmartImage
-            src={p.image}
-            fallbackSrc={getPostFallback(p)}
-            alt="Article header"
-            className="w-full rounded-2xl border border-neutral-200 shadow-sm object-cover aspect-[16/9]"
-            decoding="async"
-          />
+          <div className="aspect-video mb-8 rounded-lg overflow-hidden border border-border shadow-sm">
+            <SmartImage
+              src={p.image}
+              fallbackSrc={getPostFallback(p)}
+              alt={p.title}
+              className="w-full h-full object-cover"
+              decoding="async"
+            />
+          </div>
         )}
-        <div className="prose prose-neutral max-w-none mt-6">
+
+        <div className="prose prose-lg max-w-none">
           {p.content.length > 0 ? (
             p.content.map((block, i) => (
               block.type === 'subheader' ? (
-                <h2 key={i} className={`text-2xl ${block.text === 'Checklist' ? 'font-normal mt-2' : 'font-medium mt-8'} text-neutral-900 mb-2`}>
+                <h2 key={i} className={`text-2xl ${block.text === 'Checklist' ? 'font-normal mt-2' : 'font-semibold mt-8'} mb-4`}>
                   {block.text}
                 </h2>
               ) : block.type === 'list' ? (
                 <ul key={i} className="list-disc pl-8 mb-6 space-y-2">
                   {Array.isArray(block.items) && block.items.map((it, j) => (
-                    <li key={j} className="leading-relaxed text-neutral-700 marker:text-neutral-400">{it}</li>
+                    <li key={j} className="leading-relaxed text-muted-foreground">{it}</li>
                   ))}
                 </ul>
               ) : (
-                <p key={i} className="leading-relaxed text-neutral-800 mb-4">
+                <p key={i} className="leading-relaxed mb-4">
                   {block.text}
                 </p>
               )
             ))
           ) : (
-            <p className="leading-relaxed text-neutral-800">No content.</p>
+            <p className="leading-relaxed">No content available.</p>
           )}
         </div>
-        <div className="mt-10">
+
+        <div className="mt-10 pt-8 border-t">
           <a
             href={calendlyUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="rounded-2xl px-6 py-3 bg-black text-white text-sm font-medium hover:opacity-90"
+            className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:pointer-events-none bg-primary text-primary-foreground hover-elevate active-elevate-2 h-10 py-2 px-6"
           >
             Book a Call
           </a>
+        </div>
+
+        <div className="mt-8">
+          <button
+            type="button"
+            onClick={() => typeof navigate === 'function' ? navigate('#/blog') : null}
+            className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none border border-input hover-elevate active-elevate-2 h-9 px-4 py-2"
+          >
+            View More Articles
+          </button>
         </div>
       </div>
     </article>
   );
 }
 
-// --- Load posts from JSON written by the automation ---
 function usePosts() {
-  const [posts, setPosts] = React.useState([]);
-  const [loading, setLoading] = React.useState(true);
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  React.useEffect(() => {
+  useEffect(() => {
     (async () => {
       try {
-        const q = `?v=${Date.now()}`
+        const q = `?v=${Date.now()}`;
         const meta = await fetch(`/content/index.json${q}`, { cache: 'no-store' }).then(r => r.json());
         const full = await Promise.all(
           meta.map(m => fetch(`/content/posts/${m.slug}.json${q}`, { cache: 'no-store' }).then(r => r.json()))
         );
         setPosts(full.sort((a, b) => {
-   const da = new Date(a.updatedAt || a.createdAt || a.date || 0).getTime();
-   const db = new Date(b.updatedAt || b.createdAt || b.date || 0).getTime();
-   return db - da;
- }));
+          const da = new Date(a.updatedAt || a.createdAt || a.date || 0).getTime();
+          const db = new Date(b.updatedAt || b.createdAt || b.date || 0).getTime();
+          return db - da;
+        }));
       } catch (e) {
         console.error('Failed to load dynamic posts, falling back to local seed', e);
-        // Optional: keep a tiny local fallback so Blog isn’t empty if fetch fails
-        setPosts([
-          {
-            slug: 'qualify-gc',
-            title: 'How to Qualify a General Contractor',
-            date: '2025-10-28',
-            excerpt: 'Licensing, insurance, references, bids, and contracts — a due-diligence checklist for picking the right GC.',
-            image: 'https://res.cloudinary.com/dfr4brde4/image/upload/v1761695680/P1_Main_by48b2.jpg',
-            content: [
-              { type: 'subheader', text: '1. Licensing' },
-              { type: 'paragraph', text: "Before hiring a general contractor (GC), verify that they hold a valid state contractor’s license..." }
-            ],
-          },
-          {
-            slug: 'when-to-hire-architect',
-            title: 'When to Hire an Architect',
-            date: '2025-10-31',
-            excerpt: 'Not every flip needs an architect. Here’s when a draftsman or engineer is enough — and when full architectural plans will save you time, money, and permit headaches.',
-            image: 'https://res.cloudinary.com/dfr4brde4/image/upload/v1761970997/plans_close_up_image_resized_o4lk6i.jpg',
-            content: [
-              { type: 'subheader', text: 'Quick Take' },
-              { type: 'paragraph', text: 'Architects are essential when your project changes structure, layout, or footprint...' }
-            ],
-          }
-        ]);
+        setPosts([]);
       } finally {
         setLoading(false);
       }
@@ -370,17 +358,14 @@ function usePosts() {
   return { posts, loading };
 }
 
-
 /***************************
  * App (router + pages) 
  ***************************/
 export default function App() {
   const calendlyUrl = 'https://calendly.com/statusupgrademm/30min';
 
-  // NEW: load posts from /content
   const { posts, loading } = usePosts();
 
-  // Gallery for hero
   const gallery = [
     { before: 'https://res.cloudinary.com/dfr4brde4/image/upload/v1761113628/1before_p8xprn.webp', after: 'https://res.cloudinary.com/dfr4brde4/image/upload/v1761113628/1after_dvmp41.png' },
     { before: 'https://res.cloudinary.com/dfr4brde4/image/upload/v1761113629/before-2-1_c3o3ah.jpg', after: 'https://res.cloudinary.com/dfr4brde4/image/upload/v1761114015/after2.jpg' },
@@ -407,10 +392,9 @@ export default function App() {
     { name: 'Private Coaching (Monthly)', price: '$1,500/mo', features: ['2× 60-min calls + async support', 'Deal underwriting & risk review', 'Accountability + hiring help'] },
   ];
 
-  // Contact form state
-  const [submitting, setSubmitting] = React.useState(false);
-  const [formMsg, setFormMsg] = React.useState('');
-  const [formError, setFormError] = React.useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [formMsg, setFormMsg] = useState('');
+  const [formError, setFormError] = useState('');
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -449,14 +433,12 @@ export default function App() {
     }
   }
 
-  // Carousel state
-  const [active, setActive] = React.useState(0);
+  const [active, setActive] = useState(0);
   const hasPrev = active > 0;
   const hasNext = active < gallery.length - 1;
   const goPrev = () => hasPrev && setActive((v) => v - 1);
   const goNext = () => hasNext && setActive((v) => v + 1);
 
-  // Router
   const parseHash = () => {
     const hash = (typeof window !== 'undefined' ? window.location.hash : '') || '#/';
     const parts = hash.replace(/^#/, '').split('/').filter(Boolean);
@@ -465,69 +447,95 @@ export default function App() {
     if (parts[0] === 'blog' && parts[1]) return { kind: 'post', slug: parts[1] };
     return { kind: 'home' };
   };
-  const [route, setRoute] = React.useState(parseHash());
+  const [route, setRoute] = useState(parseHash());
   const navigate = (to) => { window.location.hash = to; };
-  React.useEffect(() => {
+  useEffect(() => {
     const onHash = () => setRoute(parseHash());
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
+  useEffect(() => {
+    if (route.kind === 'blog' || route.kind === 'post') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [route]);
 
   const openPost = (post) => navigate(`#/blog/${post.slug}`);
 
   return (
-    <div className="min-h-screen flex flex-col bg-neutral-50 text-neutral-900 scroll-smooth">
-      {/* Header */}
-      <header className="sticky top-0 z-40 backdrop-blur bg-white/70 border-b border-neutral-200">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <span className="font-semibold tracking-tight text-lg">Flipwise Consulting</span>
-          <nav className="hidden md:flex gap-6 text-sm">
+    <div className="min-h-screen flex flex-col scroll-smooth">
+      <header className="sticky top-0 z-40 backdrop-blur bg-background/80 border-b border-border">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <span className="font-bold tracking-tight text-xl">Flipwise Consulting</span>
+          <nav className="hidden md:flex gap-8 text-sm font-medium">
             {route.kind !== 'home' && (
-              <button onClick={() => navigate('#/')} className="hover:text-black">Home</button>
+              <button onClick={() => { navigate('#/'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="hover:text-primary transition-colors">Home</button>
             )}
             {route.kind === 'home' && (
               <>
-                <a href="#process" className="hover:text-black">Process</a>
-                <a href="#packages" className="hover:text-black">Mentorship</a>
-                <a href="#contact" className="hover:text-black">Contact</a>
+                <a href="#process" className="hover:text-primary transition-colors">Process</a>
+                <a href="#packages" className="hover:text-primary transition-colors">Mentorship</a>
+                <a href="#contact" className="hover:text-primary transition-colors">Contact</a>
               </>
             )}
-            <button onClick={() => navigate('#/blog')} className={`hover:text-black ${route.kind === 'blog' ? 'font-semibold' : ''}`}>Blog</button>
+            <button onClick={() => navigate('#/blog')} className={`hover:text-primary transition-colors ${route.kind === 'blog' ? 'text-primary' : ''}`}>Blog</button>
           </nav>
-          <a href={calendlyUrl} target="_blank" rel="noopener noreferrer" className="relative z-10 inline-flex items-center rounded-xl border border-neutral-300 px-4 py-2 text-sm hover:bg-neutral-100 pointer-events-auto">Book a Call</a>
+          <a href={calendlyUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors border border-input hover-elevate active-elevate-2 h-9 px-4 py-2">Book a Call</a>
         </div>
       </header>
 
-      {/* Main */}
       <main className="flex-1">
         {route.kind === 'home' && (
           <>
-            {/* Hero */}
-            <section id="hero" className="relative overflow-hidden">
-              <div className="absolute inset-0 -z-10 bg-gradient-to-b from-neutral-100 via-white to-neutral-50" />
-              <div className="max-w-6xl mx-auto px-4 py-20 md:py-28 grid md:grid-cols-2 gap-10 items-center">
-                <div>
-                  <h1 className="text-4xl md:text-5xl font-bold tracking-tight">Master Fix & Flip Investing — Guided by 10 Years of Hands-On Deals</h1>
-                  <p className="mt-5 text-neutral-700 text-lg leading-relaxed">Step-by-step mentorship and deal advisory for investors who want to find, fund, renovate, and flip properties profitably — with fewer surprises and tighter execution.</p>
-                  <div className="mt-8 flex gap-3">
-                    <a href={calendlyUrl} target="_blank" rel="noopener noreferrer" className="relative z-10 rounded-2xl px-6 py-3 bg-black text-white text-sm font-medium hover:opacity-90 pointer-events-auto">Book a Free Consultation</a>
-                    <a href="#process" className="rounded-2xl px-6 py-3 border border-neutral-300 text-sm font-medium hover:bg-neutral-100">See the Process</a>
+            <section id="hero" className="relative overflow-hidden bg-gradient-to-b from-card via-background to-card">
+              <div className="max-w-7xl mx-auto px-6 py-20 md:py-28">
+                <div className="grid md:grid-cols-2 gap-10 items-center">
+                  <div>
+                    <h1 className="text-4xl md:text-5xl font-bold tracking-tight">Master Fix & Flip Investing — Guided by 10 Years of Hands-On Deals</h1>
+                    <p className="mt-5 text-muted-foreground text-lg leading-relaxed">Step-by-step mentorship and deal advisory for investors who want to find, fund, renovate, and flip properties profitably — with fewer surprises and tighter execution.</p>
+                    <div className="mt-8 flex flex-wrap gap-3">
+                      <a href={calendlyUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center rounded-md text-sm font-medium bg-primary text-primary-foreground hover-elevate active-elevate-2 h-10 py-2 px-6">Book a Free Consultation</a>
+                      <a href="#process" className="inline-flex items-center justify-center rounded-md text-sm font-medium border border-input hover-elevate active-elevate-2 h-10 py-2 px-6">See the Process</a>
+                    </div>
                   </div>
-                </div>
-                <div className="relative">
-                  <div className="aspect-[4/3] w-full rounded-3xl bg-neutral-200 shadow-sm overflow-hidden relative">
-                    <BeforeAfterSlider item={gallery[active]} />
-                    <div className="absolute inset-0 pointer-events-none">
-                      <div className="absolute left-2 top-1/2 -translate-y-1/2">
-                        <button type="button" aria-label="Previous image" onClick={goPrev} className={`pointer-events-auto rounded-full bg-white/90 shadow px-3 py-2 text-sm ${hasPrev ? 'opacity-100' : 'opacity-40 cursor-not-allowed'}`}>←</button>
+
+                  <div className="relative">
+                    <div className="aspect-[4/3] w-full rounded-lg shadow-lg overflow-hidden relative">
+                      <BeforeAfterSlider item={gallery[active]} />
+                      <div className="absolute left-2 top-1/2 -translate-y-1/2 z-30">
+                        <button
+                          type="button"
+                          onClick={goPrev}
+                          disabled={!hasPrev}
+                          className="inline-flex items-center justify-center rounded-full h-9 w-9 bg-secondary hover-elevate active-elevate-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+                          aria-label="Previous image"
+                        >
+                          ←
+                        </button>
                       </div>
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2">
-                        <button type="button" aria-label="Next image" onClick={goNext} className={`pointer-events-auto rounded-full bg-white/90 shadow px-3 py-2 text-sm ${hasNext ? 'opacity-100' : 'opacity-40 cursor-not-allowed'}`}>→</button>
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 z-30">
+                        <button
+                          type="button"
+                          onClick={goNext}
+                          disabled={!hasNext}
+                          className="inline-flex items-center justify-center rounded-full h-9 w-9 bg-secondary hover-elevate active-elevate-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+                          aria-label="Next image"
+                        >
+                          →
+                        </button>
                       </div>
-                      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-2">
-                        {gallery.map((_, i) => (
-                          <button key={i} aria-label={`Go to slide ${i + 1}`} onClick={() => setActive(i)} className={`h-2.5 w-2.5 rounded-full border border-white/80 pointer-events-auto ${i === active ? 'bg-white' : 'bg-white/40'}`} />
+                      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex gap-1">
+                        {gallery.map((_, index) => (
+                          <button
+                            key={index}
+                            type="button"
+                            onClick={() => setActive(index)}
+                            className="inline-flex items-center justify-center h-9 w-9 hover:bg-transparent"
+                            aria-label={`Go to slide ${index + 1}`}
+                          >
+                            <span className={`block rounded-full transition-all ${index === active ? 'bg-white w-6 h-2.5' : 'bg-white/50 w-2.5 h-2.5'}`} />
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -536,145 +544,195 @@ export default function App() {
               </div>
             </section>
 
-            {/* Process */}
-            <section id="process" className="py-16 md:py-24 border-t border-neutral-200 bg-neutral-50">
-              <div className="max-w-6xl mx-auto px-4">
-                <h2 className="text-3xl md:text-4xl font-semibold tracking-tight">How We Help — Step by Step</h2>
-                <p className="mt-4 text-neutral-700 max-w-3xl">A repeatable operating system for finding, funding, renovating, and selling profitable deals — with clarity at every decision point.</p>
-                <ol className="mt-10 grid md:grid-cols-2 lg:grid-cols-3 gap-6 list-decimal list-inside">
-                  {steps.map((s, i) => (
-                    <li key={i} className="rounded-2xl bg-white border border-neutral-200 p-5 shadow-sm">
-                      <h3 className="font-semibold">{s.title}</h3>
-                      <p className="mt-2 text-sm text-neutral-700 leading-relaxed">{s.text}</p>
-                    </li>
+            <section id="process" className="py-20 bg-background">
+              <div className="max-w-7xl mx-auto px-6">
+                <div className="text-center mb-12">
+                  <h2 className="text-3xl md:text-4xl font-bold mb-4">The Process</h2>
+                  <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                    A proven framework to guide you from property acquisition to profitable exit
+                  </p>
+                </div>
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {steps.map((step, index) => (
+                    <div key={index} className="rounded-lg border border-border bg-card p-6 shadow-sm hover-elevate">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary text-primary-foreground font-bold">
+                          {index + 1}
+                        </div>
+                        <h3 className="font-bold text-lg">{step.title}</h3>
+                      </div>
+                      <p className="text-sm text-muted-foreground leading-relaxed">{step.text}</p>
+                    </div>
                   ))}
-                </ol>
+                </div>
               </div>
             </section>
 
-            {/* Packages */}
-            <section id="packages" className="py-16 md:py-24 border-t border-neutral-200">
-              <div className="max-w-6xl mx-auto px-4">
-                <h2 className="text-3xl md:text-4xl font-semibold tracking-tight">Mentorship Packages</h2>
-                <p className="mt-4 text-neutral-700">Choose the level of support that matches your experience and goals. Every engagement is hands-on and outcome-focused.</p>
-                <div className="mt-10 grid md:grid-cols-3 gap-6">
-                  {packages.map((p) => (
-                    <div key={p.name} className="rounded-3xl bg-white border border-neutral-200 p-6 shadow-sm flex flex-col">
-                      <div className="flex items-baseline justify-between">
-                        <h3 className="text-lg font-semibold">{p.name}</h3>
-                        <span className="text-sm text-neutral-600">{p.price}</span>
+            <section id="packages" className="py-20 bg-card">
+              <div className="max-w-7xl mx-auto px-6">
+                <div className="text-center mb-12">
+                  <h2 className="text-3xl md:text-4xl font-bold mb-4">Mentorship Programs</h2>
+                  <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                    Choose the level of support that fits your investment goals
+                  </p>
+                </div>
+                <div className="grid md:grid-cols-3 gap-8">
+                  {packages.map((pkg, i) => (
+                    <div key={i} className="rounded-lg border border-border bg-background p-6 shadow-sm hover-elevate active-elevate-2 transition-all flex flex-col">
+                      <h3 className="font-bold text-xl mb-2">{pkg.name}</h3>
+                      <div className="mt-4">
+                        <span className="text-3xl font-bold">{pkg.price}</span>
                       </div>
-                      <ul className="mt-4 space-y-2 text-sm text-neutral-700">
-                        {p.features.map((f) => (
-                          <li key={f} className="flex gap-2">
-                            <span aria-hidden className="mt-1">✓</span>
-                            <span>{f}</span>
+                      <ul className="space-y-3 mb-6 mt-6 flex-1">
+                        {pkg.features.map((feature, j) => (
+                          <li key={j} className="flex items-start gap-2">
+                            <svg className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            <span className="text-sm">{feature}</span>
                           </li>
                         ))}
                       </ul>
-                      <a href="#contact" className="mt-6 rounded-xl border border-neutral-300 px-4 py-2 text-sm hover:bg-neutral-100 text-center">Inquire</a>
+                      <a href={calendlyUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center rounded-md text-sm font-medium bg-primary text-primary-foreground hover-elevate active-elevate-2 h-10 py-2 px-4 w-full">Get Started</a>
                     </div>
                   ))}
                 </div>
               </div>
             </section>
 
-            {/* Contact */}
-            <section id="contact" className="py-16 md:py-24 border-t border-neutral-200 bg-neutral-50">
-              <div className="max-w-3xl mx-auto px-4">
-                <h2 className="text-3xl md:text-4xl font-semibold tracking-tight">Let’s Talk About Your Next Flip</h2>
-                <p className="mt-4 text-neutral-700">Fill out the form and I’ll get back to you within one business day. All inquiries are confidential.</p>
-                <form className="mt-8 grid grid-cols-1 gap-4" method="POST" onSubmit={handleSubmit}>
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium">Name</label>
-                      <input name="name" required type="text" className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2 outline-none focus:ring-2 focus:ring-black" placeholder="Jane Doe" />
+            <section id="contact" className="py-20 bg-background">
+              <div className="max-w-7xl mx-auto px-6">
+                <div className="text-center mb-12">
+                  <h2 className="text-3xl md:text-4xl font-bold mb-4">Get In Touch</h2>
+                  <p className="text-lg text-muted-foreground">Ready to start your fix and flip journey? Contact us today for a free consultation.</p>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-8">
+                  {/* Left Column: Contact Form */}
+                  <div className="rounded-lg border border-border bg-card p-6 md:p-8">
+                    <h3 className="text-2xl font-bold mb-2">Send Us a Message</h3>
+                    <p className="text-sm text-muted-foreground mb-6">Fill out the form below and we'll respond within 24 hours</p>
+                    
+                    <form onSubmit={handleSubmit} className="space-y-6">
+                      <div>
+                        <label htmlFor="name" className="block text-sm font-medium mb-2">Name *</label>
+                        <input type="text" id="name" name="name" required className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" />
+                      </div>
+                      <div>
+                        <label htmlFor="email" className="block text-sm font-medium mb-2">Email *</label>
+                        <input type="email" id="email" name="email" required className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" />
+                      </div>
+                      <div>
+                        <label htmlFor="phone" className="block text-sm font-medium mb-2">Phone</label>
+                        <input type="tel" id="phone" name="phone" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" />
+                      </div>
+                      <div>
+                        <label htmlFor="message" className="block text-sm font-medium mb-2">Message *</label>
+                        <textarea id="message" name="message" rows={5} required className="flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"></textarea>
+                      </div>
+                      {formMsg && <p className="text-sm text-green-600">{formMsg}</p>}
+                      {formError && <p className="text-sm text-destructive">{formError}</p>}
+                      <button type="submit" disabled={submitting} className="inline-flex items-center justify-center rounded-md text-sm font-medium bg-primary text-primary-foreground hover-elevate active-elevate-2 h-10 px-8 py-2 w-full disabled:opacity-50 disabled:pointer-events-none">
+                        {submitting ? 'Sending...' : 'Send Message'}
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Right Column: Contact Info Cards */}
+                  <div className="space-y-4">
+                    {/* Office Hours */}
+                    <div className="rounded-lg border border-border bg-card p-6 flex gap-4">
+                      <div className="flex-shrink-0">
+                        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                          <Clock className="w-5 h-5 text-primary" />
+                        </div>
+                      </div>
+                      <div>
+                        <h4 className="font-bold mb-2">Office Hours</h4>
+                        <p className="text-sm text-muted-foreground">Monday - Friday: 9:00 AM - 6:00 PM EST</p>
+                        <p className="text-sm text-muted-foreground">Weekend: By Appointment Only</p>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium">Email</label>
-                      <input name="email" required type="email" className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2 outline-none focus:ring-2 focus:ring-black" placeholder="you@example.com" />
+
+                    {/* Email */}
+                    <div className="rounded-lg border border-border bg-card p-6 flex gap-4">
+                      <div className="flex-shrink-0">
+                        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                          <Mail className="w-5 h-5 text-primary" />
+                        </div>
+                      </div>
+                      <div>
+                        <h4 className="font-bold mb-2">Email</h4>
+                        <p className="text-sm text-muted-foreground">info@flipadvisory.com</p>
+                      </div>
+                    </div>
+
+                    {/* Phone */}
+                    <div className="rounded-lg border border-border bg-card p-6 flex gap-4">
+                      <div className="flex-shrink-0">
+                        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                          <Phone className="w-5 h-5 text-primary" />
+                        </div>
+                      </div>
+                      <div>
+                        <h4 className="font-bold mb-2">Phone</h4>
+                        <p className="text-sm text-muted-foreground">(555) 123-4567</p>
+                      </div>
+                    </div>
+
+                    {/* Why Choose Us */}
+                    <div className="rounded-lg border border-border bg-card p-6 flex gap-4">
+                      <div className="flex-shrink-0">
+                        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                          <CheckCircle2 className="w-5 h-5 text-primary" />
+                        </div>
+                      </div>
+                      <div>
+                        <h4 className="font-bold mb-2">Why Choose Us</h4>
+                        <ul className="text-sm text-muted-foreground space-y-1">
+                          <li>• Licensed & Insured</li>
+                          <li>• 15+ Years Experience</li>
+                          <li>• 500+ Successful Flips</li>
+                          <li>• Personalized Approach</li>
+                        </ul>
+                      </div>
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium">Message</label>
-                    <textarea name="message" rows={5} className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2 outline-none focus:ring-2 focus:ring-black" placeholder="Tell me about your goals, market, and timeline."></textarea>
-                  </div>
-                  <div className="flex gap-3 items-center">
-                    <button type="submit" disabled={submitting} className="rounded-2xl px-6 py-3 bg-black text-white text-sm font-medium hover:opacity-90 disabled:opacity-60">{submitting ? 'Sending…' : 'Send Message'}</button>
-                    <a href={calendlyUrl} target="_blank" rel="noopener noreferrer" className="relative z-10 text-sm text-neutral-600 underline underline-offset-4 pointer-events-auto">Or book via Calendly</a>
-                  </div>
-                  <div className="mt-3 text-sm" aria-live="polite">
-                    {formMsg ? <p className="text-green-700">{formMsg}</p> : null}
-                    {formError ? <p className="text-red-700">{formError}</p> : null}
-                  </div>
-                </form>
+                </div>
               </div>
             </section>
           </>
         )}
 
-      {route.kind === 'blog' && (
-    loading
-      ? <section className="py-16 md:py-24"><div className="max-w-6xl mx-auto px-4"><p>Loading posts…</p></div></section>
-      : <BlogIndex posts={posts} onOpen={openPost} />
-  )}
+        {route.kind === 'blog' && <BlogIndex posts={posts} onOpen={openPost} />}
 
         {route.kind === 'post' && (
-    <BlogPost
-      post={posts.find((p) => p.slug === route.slug)}
-      calendlyUrl={calendlyUrl}
-      navigate={navigate}
-    />
-  )}
+          <BlogPost
+            post={posts.find(p => p.slug === route.slug)}
+            calendlyUrl={calendlyUrl}
+            navigate={navigate}
+          />
+        )}
       </main>
 
-      {/* Footer */}
-      <footer className="py-10 border-t border-neutral-200 bg-white">
-        <div className="max-w-6xl mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-3 text-sm text-neutral-600">
-          <p>© {new Date().getFullYear()} Flipwise Consulting. All rights reserved.</p>
-          <div className="flex items-center gap-4">
-            <a href="https://www.linkedin.com/company/flipwise-consulting/about/" className="hover:text-black">LinkedIn</a>
-            <a href="https://www.instagram.com/flipwiseconsulting/" className="hover:text-black">Instagram</a>
+      <footer className="bg-card border-t border-border py-12">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+            <p className="text-sm text-muted-foreground">
+              © {new Date().getFullYear()} Flipwise Consulting. All rights reserved.
+            </p>
+
+            <div className="flex gap-6">
+              <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-social-linkedin">
+                LinkedIn
+              </a>
+              <a href="https://www.instagram.com/flipwiseconsulting/" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-social-instagram">
+                Instagram
+              </a>
+            </div>
           </div>
         </div>
       </footer>
-
-      {/* ------- Lightweight Runtime Tests ------- */}
-      <TestSuite posts={posts} />
     </div>
   );
-}
-
-/***************************
- * Minimal runtime tests (dev only)
- ***************************/
-function TestSuite({ posts }) {
-  // Simple assertions printed to console; keeps preview clean
-  React.useEffect(() => {
-    const log = (...args) => console.log('[TEST]', ...args);
-    const assert = (cond, msg) => { if (!cond) console.error('[TEST FAIL]', msg); else log('PASS', msg); };
-
-    // 1) sanitizeContent drops bad items and strips leading numbers
-    const raw = [null, 42, { foo: 'bar', text: '3) Hello' }, { type: 'subheader', text: '1. Title' }, '2) Para'];
-    const out = sanitizeContent(raw);
-    assert(Array.isArray(out) && out.length === 3, 'sanitizeContent filters and normalizes length');
-    assert(out[0].type === 'paragraph' && out[0].text === 'Hello', 'coerces object->paragraph + strips numbers');
-    assert(out[1].type === 'subheader' && out[1].text === 'Title', 'keeps subheader + strips numbers');
-    assert(out[2].type === 'paragraph' && out[2].text === 'Para', 'string->paragraph + strips numbers');
-
-    // 2) safePostShape provides defaults
-    const malformed = { title: '', content: ['1) ok'] };
-    const sp = safePostShape(malformed);
-    assert(sp.title === 'Untitled', 'default title');
-    assert(sp.slug === 'post', 'default slug');
-    assert(sp.content[0].text === 'ok', 'content sanitized');
-
-    // 3) BlogPost should handle undefined gracefully (we simulate by calling safePostShape null)
-    assert(safePostShape(null) === null, 'safePostShape(null) => null');
-
-    // 4) SmartImage should initialize with fallback if src empty
-    const el = React.createElement(SmartImage, { src: '', fallbackSrc: '/assets/post-fallback.jpg', alt: 'x' });
-    assert(!!el, 'SmartImage element created');
-  }, []);
-  return null;
 }
