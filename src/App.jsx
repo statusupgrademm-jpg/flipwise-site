@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Clock, Mail, Phone, CheckCircle2 } from "lucide-react";
+import { Clock, Mail, Phone, CheckCircle2, Facebook, Twitter, Linkedin, Instagram, Menu, X } from "lucide-react";
 
 /***************************
  * Utilities (defensive)
@@ -448,7 +448,8 @@ export default function App() {
     return { kind: 'home' };
   };
   const [route, setRoute] = useState(parseHash());
-  const navigate = (to) => { window.location.hash = to; };
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const navigate = (to) => { window.location.hash = to; setMobileMenuOpen(false); };
   useEffect(() => {
     const onHash = () => setRoute(parseHash());
     window.addEventListener('hashchange', onHash);
@@ -468,6 +469,8 @@ export default function App() {
       <header className="sticky top-0 z-40 backdrop-blur bg-background/80 border-b border-border">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <span className="font-bold tracking-tight text-xl">Flipwise Consulting</span>
+          
+          {/* Desktop Navigation */}
           <nav className="hidden md:flex gap-8 text-sm font-medium">
             {route.kind !== 'home' && (
               <button onClick={() => { navigate('#/'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="hover:text-primary transition-colors">Home</button>
@@ -481,8 +484,60 @@ export default function App() {
             )}
             <button onClick={() => navigate('#/blog')} className={`hover:text-primary transition-colors ${route.kind === 'blog' ? 'text-primary' : ''}`}>Blog</button>
           </nav>
-          <a href={calendlyUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors border border-input hover-elevate active-elevate-2 h-9 px-4 py-2">Book a Call</a>
+
+          {/* Desktop Book a Call Button */}
+          <a href={calendlyUrl} target="_blank" rel="noopener noreferrer" className="hidden md:inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors border border-input hover-elevate active-elevate-2 h-9 px-4 py-2">Book a Call</a>
+
+          {/* Mobile Menu Button */}
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="md:hidden inline-flex items-center justify-center rounded-md p-2 hover-elevate active-elevate-2"
+            aria-label="Toggle menu"
+            data-testid="button-mobile-menu"
+          >
+            {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+          </button>
         </div>
+
+        {/* Mobile Navigation Menu */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-t border-border bg-background">
+            <nav className="max-w-7xl mx-auto px-6 py-4 flex flex-col gap-4">
+              {route.kind !== 'home' && (
+                <button
+                  onClick={() => { navigate('#/'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                  className="text-left hover:text-primary transition-colors font-medium"
+                  data-testid="link-mobile-home"
+                >
+                  Home
+                </button>
+              )}
+              {route.kind === 'home' && (
+                <>
+                  <a href="#process" onClick={() => setMobileMenuOpen(false)} className="hover:text-primary transition-colors font-medium" data-testid="link-mobile-process">Process</a>
+                  <a href="#packages" onClick={() => setMobileMenuOpen(false)} className="hover:text-primary transition-colors font-medium" data-testid="link-mobile-mentorship">Mentorship</a>
+                  <a href="#contact" onClick={() => setMobileMenuOpen(false)} className="hover:text-primary transition-colors font-medium" data-testid="link-mobile-contact">Contact</a>
+                </>
+              )}
+              <button
+                onClick={() => navigate('#/blog')}
+                className={`text-left hover:text-primary transition-colors font-medium ${route.kind === 'blog' ? 'text-primary' : ''}`}
+                data-testid="link-mobile-blog"
+              >
+                Blog
+              </button>
+              <a
+                href={calendlyUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center rounded-md text-sm font-medium bg-primary text-primary-foreground hover-elevate active-elevate-2 h-10 py-2 px-6 mt-2"
+                data-testid="button-mobile-book-call"
+              >
+                Book a Call
+              </a>
+            </nav>
+          </div>
+        )}
       </header>
 
       <main className="flex-1">
@@ -676,7 +731,7 @@ export default function App() {
                       </div>
                       <div>
                         <h4 className="font-bold mb-2">Phone</h4>
-                        <p className="text-sm text-muted-foreground">(555) 123-4567</p>
+                        <p className="text-sm text-muted-foreground"> (424) 298-5731</p>
                       </div>
                     </div>
 
@@ -690,9 +745,8 @@ export default function App() {
                       <div>
                         <h4 className="font-bold mb-2">Why Choose Us</h4>
                         <ul className="text-sm text-muted-foreground space-y-1">
-                          <li>• Licensed & Insured</li>
-                          <li>• 15+ Years Experience</li>
-                          <li>• 500+ Successful Flips</li>
+                          <li>• 10+ Years Experience</li>
+                          <li>• 50+ Successful Flips</li>
                           <li>• Personalized Approach</li>
                         </ul>
                       </div>
@@ -726,7 +780,7 @@ export default function App() {
               <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-social-linkedin">
                 LinkedIn
               </a>
-              <a href="https://www.instagram.com/flipwiseconsulting/" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-social-instagram">
+              <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-social-instagram">
                 Instagram
               </a>
             </div>
