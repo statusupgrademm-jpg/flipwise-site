@@ -1,31 +1,41 @@
 permissions:
   contents: write
+
 name: Ingest Blog Post
+
 on:
   workflow_dispatch:
     inputs:
       url:
         description: 'Source article URL'
         required: true
+
 jobs:
   ingest:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0         # so we can push back cleanly
+          fetch-depth: 0  # so we can push back cleanly
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+
       - name: Install deps
         run: npm i jsdom @mozilla/readability node-fetch openai cloudinary
+
       - name: Ingest URL → JSON post + image
+        id: ingest
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
           CLOUDINARY_URL: ${{ secrets.CLOUDINARY_URL }}
           UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
+          SITE_BASE_URL: ${{ secrets.SITE_BASE_URL }} # e.g. https://flipwiseconsulting.org/#/blog
         run: node scripts/ingest-url.mjs '${{ github.event.inputs.url }}'
+
       - name: Commit new content
         env:
           BRANCH: ${{ github.ref_name }}   # usually 'main' for workflow_dispatch
@@ -36,5 +46,23 @@ jobs:
           git commit -m "chore(blog): ingest ${{ github.event.inputs.url }}" || echo "No changes"
           git pull --rebase origin "$BRANCH" || true
           git push origin HEAD:"$BRANCH"
+
       - name: Trigger Netlify build
         run: curl -X POST '${{ secrets.NETLIFY_BUILD_HOOK }}'
+
+      - name: Wait a few seconds
+        run: sleep 5
+
+      - name: 📸 Post new blog to Instagram
+        if: ${{ steps.ingest.outputs.cloudinary_url != '' }}
+        run: node scripts/igPublish.js
+        env:
+          FB_LONG_USER_TOKEN: ${{ secrets.FB_LONG_USER_TOKEN }}
+          PAGE_ID: ${{ secrets.PAGE_ID }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          MEDIA_URL: ${{ steps.ingest.outputs.cloudinary_url }}
+          POST_TITLE: ${{ steps.ingest.outputs.title }}
+          POST_EXCERPT: ${{ steps.ingest.outputs.excerpt }}
+          POST_URL: ${{ steps.ingest.outputs.url }}
+          POST_TAGS: "realestate,flipwise,renovation,investing"
+          IS_VIDEO: "false"

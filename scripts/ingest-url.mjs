@@ -1,3 +1,5 @@
+// scripts/ingest-url.mjs
+// Generate blog posts + uploads imiage
 import fetch from 'node-fetch';
 import { JSDOM } from 'jsdom';
 import { Readability } from '@mozilla/readability';
@@ -8,18 +10,42 @@ import { writePost } from './new-post.mjs';
 import { existsSync, readFileSync } from 'node:fs';
 
 const SOURCE_URL = process.argv[2];
-if (!SOURCE_URL) { console.error('Usage: node scripts/ingest-url.mjs <url>'); process.exit(1); }
+if (!SOURCE_URL) {
+  console.error('Usage: node scripts/ingest-url.mjs <url>');
+  process.exit(1);
+}
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const MODEL = process.env.OPENAI_MODEL || 'gpt-4.1';
 const UNSPLASH_ACCESS_KEY = process.env.UNSPLASH_ACCESS_KEY || '';
+const SITE_BASE_URL = process.env.SITE_BASE_URL || 'https://your-site.com';
 
+// --- basic env guards (clearer failures) ---
+function requireEnv(name, val) {
+  if (!val) {
+    console.error(`${name} is missing`);
+    process.exit(1);
+  }
+}
+requireEnv('OPENAI_API_KEY', OPENAI_API_KEY);
+requireEnv('CLOUDINARY_URL', process.env.CLOUDINARY_URL);
+requireEnv('UNSPLASH_ACCESS_KEY', UNSPLASH_ACCESS_KEY);
+
+// Cloudinary: reads CLOUDINARY_URL from env; secure URLs on
 cloudinary.v2.config({ secure: true });
 
-const slugify = s => s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'').slice(0,80);
+const slugify = (s) =>
+  s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 80);
+
+function buildPostUrl(base, slug) {
+  const b = base.replace(/\/$/, '');
+  return b.includes('#/blog') || /\/blog$/.test(b)
+    ? `${b}/${slug}`
+    : `${b}/blog/${slug}`;
+}
 
 async function extract(url) {
-  const html = await fetch(url).then(r => r.text());
+  const html = await fetch(url).then((r) => r.text());
   const dom = new JSDOM(html);
   const reader = new Readability(dom.window.document);
   const article = reader.parse() || {};
@@ -33,7 +59,10 @@ async function rewrite({ title, body }) {
   const user = `Source title: ${title}\n\nSource body:\n${body}`;
   const resp = await openai.chat.completions.create({
     model: MODEL,
-    messages: [{ role: 'system', content: sys }, { role: 'user', content: user }],
+    messages: [
+      { role: 'system', content: sys },
+      { role: 'user', content: user }
+    ],
     temperature: 0.4
   });
   return JSON.parse(resp.choices[0].message.content);
@@ -61,7 +90,7 @@ async function uploadToCloudinaryByUrl(srcUrl, publicIdBase) {
     overwrite: true,
     invalidate: true,
     resource_type: 'image',
-    transformation: [{ fetch_format: 'auto', quality: 'auto' }],
+    transformation: [{ fetch_format: 'auto', quality: 'auto' }]
   });
   return up.secure_url;
 }
@@ -80,7 +109,7 @@ async function genFallbackSvgToCloudinary(label, publicIdBase) {
     overwrite: true,
     invalidate: true,
     resource_type: 'image',
-    format: 'png',
+    format: 'png'
   });
   return up.secure_url;
 }
@@ -101,7 +130,8 @@ async function getImageUrlForPost(slug, title) {
   const rewritten = await rewrite({ title: raw.title, body: raw.content });
   const slug = slugify(rewritten.title);
   const image = await getImageUrlForPost(slug, rewritten.title);
-  // --- NEW DATE LOGIC STARTS HERE ---
+
+  // --- Preserve original createdAt if file already exists ---
   const nowIso = new Date().toISOString();
   let createdAt = nowIso;
   const postPath = `public/content/posts/${slug}.json`;
@@ -110,11 +140,10 @@ async function getImageUrlForPost(slug, title) {
     try {
       const prev = JSON.parse(readFileSync(postPath, 'utf8'));
       createdAt = prev.createdAt || prev.date || createdAt;
-    } catch {}
+    } catch {
+      // ignore parse errors and keep createdAt = now
+    }
   }
-
-
-  
 
   await writePost({
     slug,
@@ -125,6 +154,22 @@ async function getImageUrlForPost(slug, title) {
     image,
     content: rewritten.content
   });
+
+  // Build canonical URL for this post (handles hash-router bases like https://site/#/blog)
+  const postUrl = buildPostUrl(SITE_BASE_URL, slug);
+
+  // Emit outputs for GitHub Actions
+  const outFile = process.env.GITHUB_OUTPUT;
+  if (outFile) {
+    await writeFile(
+      outFile,
+      `cloudinary_url=${image}\n` +
+        `title=${rewritten.title}\n` +
+        `excerpt=${rewritten.excerpt}\n` +
+        `url=${postUrl}\n`,
+      { flag: 'a' }
+    );
+  }
 
   await writeFile(`public/content/posts/${slug}.source.txt`, SOURCE_URL, 'utf8');
   console.log(`Ingested → ${slug}`);
