@@ -66,3 +66,15 @@ jobs:
           POST_URL: ${{ steps.ingest.outputs.url }}
           POST_TAGS: "realestate,flipwise,renovation,investing"
           IS_VIDEO: "false"
+
+      - name: 📘 Post new blog to Facebook Page
+        if: ${{ steps.ingest.outputs.cloudinary_url != '' }}
+        run: node scripts/fbPublish.js
+        env:
+          FB_LONG_USER_TOKEN: ${{ secrets.FB_LONG_USER_TOKEN }}
+          PAGE_ID: ${{ secrets.PAGE_ID }}
+          # reuse the same data that went to IG
+          FB_IMAGE_URL: ${{ steps.ingest.outputs.cloudinary_url }}
+          FB_MESSAGE: "${{ steps.ingest.outputs.title }}\n\n${{ steps.ingest.outputs.excerpt }}\n\n${{ steps.ingest.outputs.url }}"
+          # Optional: if you prefer a link post instead of a photo post, include FB_LINK_URL and omit FB_IMAGE_URL
+          # FB_LINK_URL: ${{ steps.ingest.outputs.url }}
