@@ -135,30 +135,23 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
     throw new Error(`Cloudinary eager transform failed: ${JSON.stringify(json)}`);
   }
 
-  const eagerData = json.eager[0];
+    const eagerData = json.eager[0];
   console.log(`[FB-CLOUDINARY] Eager data:`, JSON.stringify(eagerData, null, 2));
   
-  // Build clean static URL - use eager's secure_url
-  let staticUrl;
+  // Use the eager's secure_url - Cloudinary has pre-generated this image
+  const staticUrl = eagerData.secure_url || eagerData.url;
   
-  if (eagerData.secure_url) {
-    staticUrl = eagerData.secure_url;
-    console.log(`[FB-CLOUDINARY] ✅ Using eager secure_url: ${staticUrl}`);
-  } else if (json.public_id) {
-    // Fallback: construct from public_id
-    staticUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${json.public_id}.jpg`;
-    console.log(`[FB-CLOUDINARY] ⚠️ Constructed from public_id: ${staticUrl}`);
-  } else {
-    throw new Error(`Cannot extract static URL from Cloudinary response: ${JSON.stringify(json)}`);
+  if (!staticUrl) {
+    throw new Error(`Cannot extract URL from Cloudinary eager response: ${JSON.stringify(eagerData)}`);
   }
   
-  // Verify it's truly static (no transform markers in URL)
-  if (staticUrl.includes('/c_fill,') || staticUrl.includes('/e_brightness')) {
-    console.error(`[FB-CLOUDINARY] ❌ URL still contains transforms! ${staticUrl}`);
-    throw new Error(`Eager URL contains transforms - not a static asset URL`);
-  }
-  
+  console.log(`[FB-CLOUDINARY] ✅ Using eager URL: ${staticUrl}`);
   console.log(`[FB-CLOUDINARY] Dimensions: ${eagerData.width}x${eagerData.height}`);
+  
+  // Verify dimensions are correct (Facebook OG images are 1200x630)
+  if (eagerData.height !== 630 || eagerData.width !== 1200) {
+    console.warn(`[FB-CLOUDINARY] ⚠️ Unexpected dimensions: ${eagerData.width}x${eagerData.height}`);
+  }
   
   return staticUrl;
 }
