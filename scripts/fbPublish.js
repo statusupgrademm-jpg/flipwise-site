@@ -82,15 +82,15 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
   const format = "jpg";
   const timestamp = Math.floor(Date.now() / 1000);
 
-  const H1 = String(title || "").toUpperCase().replace(/\n/g, " ");
+   const H1 = String(title || "").toUpperCase().replace(/\n/g, " ");
   const SUB = String(sub || "").toUpperCase().replace(/\n/g, " ");
 
-  // Facebook-optimized: 1200x630 (recommended OG image size)
+  // Facebook: 1200x630 landscape with darkened overlay + white text
   const eager =
-    `ar_191:100,c_fill,w_1200,h_630,g_auto,fl_strip_profile,q_auto,f_jpg` +
-    `/e_colorize:70,co_rgb:000000` +
-    `/l_text:Montserrat_70_bold:${encodeURIComponent(H1)},co_rgb:ffffff,g_center,y_-40` +
-    `/l_text:Montserrat_28_bold:${encodeURIComponent(SUB)},co_rgb:ffffff,g_center,y_240`;
+    `c_fill,w_1200,h_630,ar_191:100,g_auto,q_auto:good,f_jpg` +
+    `/e_brightness:-40` +
+    `/co_rgb:FFFFFF,l_text:arial_60_bold:${encodeURIComponent(H1)},g_north,y_200` +
+    `/co_rgb:FFFFFF,l_text:arial_28_bold:${encodeURIComponent(SUB)},g_south,y_200`;
 
   console.log(`[FB-CLOUDINARY] Transform: ${eager.substring(0, 100)}...`);
 

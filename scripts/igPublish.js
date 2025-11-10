@@ -127,13 +127,12 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
 
   const H1 = String(title || "").toUpperCase().replace(/\n/g, " ");
   const SUB = String(sub || "").toUpperCase().replace(/\n/g, " ");
-
-  // Force exact 1:1 square 1080x1080; strip metadata; final JPG
+  // Instagram: 1080x1080 square with darkened overlay + white text
   const eager =
-    `ar_1:1,c_fill,w_1080,h_1080,g_auto,fl_strip_profile,q_auto,f_jpg` +
-    `/e_colorize:70,co_rgb:000000` +
-    `/l_text:Montserrat_90_bold:${encodeURIComponent(H1)},co_rgb:ffffff,g_center,y_-60` +
-    `/l_text:Montserrat_32_bold:${encodeURIComponent(SUB)},co_rgb:ffffff,g_center,y_360`;
+    `c_fill,w_1080,h_1080,ar_1:1,g_auto,q_auto:good,f_jpg` +
+    `/e_brightness:-40` +
+    `/co_rgb:FFFFFF,l_text:arial_80_bold:${encodeURIComponent(H1)},g_north,y_400` +
+    `/co_rgb:FFFFFF,l_text:arial_32_bold:${encodeURIComponent(SUB)},g_south,y_400`;
 
   console.log(`[CLOUDINARY] Transform: ${eager.substring(0, 100)}...`);
 
