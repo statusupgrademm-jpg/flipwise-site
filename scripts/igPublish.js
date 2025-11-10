@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 
 /**
  * Instagram publishing via Page token (no IG_ACCESS_TOKEN required).
- * Fixes IG 9004 error by pre-generating a static JPG in Cloudinary (eager transformation) before posting.
+ * Uses a signed Cloudinary eager upload to generate a static JPG with overlay before posting to IG.
  *
  * Required env:
  *   PAGE_ID                 Facebook Page ID connected to IG account
@@ -73,15 +73,15 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
   const folder = "social_overlayed";
   const timestamp = Math.floor(Date.now() / 1000);
 
-  // Build the eager transformation (do not URL-encode in the signature)
+  // Build the eager transformation (do not URL-encode the entire string; only the text payloads)
   const H1 = String(title || "").toUpperCase().replace(/\n/g, " ");
   const SUB = String(sub || "").toUpperCase().replace(/\n/g, " ");
 
   const eager =
     `c_fill,w_1080,h_1350,q_auto,f_jpg` +
     `/e_colorize:70,co_rgb:000000` +
-    `/l_text:Montserrat_90_bold:${encodeURIComponent(H1)},co_rgb:ffffff,g_center,y_-80,letter_spacing:3` +
-    `/l_text:Montserrat_32_bold:${encodeURIComponent(SUB)},co_rgb:ffffff,g_center,y_480,letter_spacing:3`;
+    `/l_text:Montserrat_90_bold:${encodeURIComponent(H1)},co_rgb:ffffff,g_center,y_-80` +
+    `/l_text:Montserrat_32_bold:${encodeURIComponent(SUB)},co_rgb:ffffff,g_center,y_480`;
 
   // Sign parameters alphabetically by key: eager, folder, timestamp
   const toSign = `eager=${eager}&folder=${folder}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
@@ -112,7 +112,7 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
 
 async function getPageToken() {
   const r = await fetch(
-    `https://graph.facebook.com/v24.0/me/accounts?access_token=${USER_LONG_TOKEN}`
+    `https://graph.facebook.com/v24.0/me/accounts?access_token=${USER_LONG_USER_TOKEN}`
   );
   const j = await r.json();
   if (!j?.data) throw new Error(`me/accounts failed: ${JSON.stringify(j)}`);
