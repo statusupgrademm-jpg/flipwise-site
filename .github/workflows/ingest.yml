@@ -88,11 +88,12 @@ jobs:
           # Content
           FB_IMAGE_URL: ${{ steps.ingest.outputs.cloudinary_url }}
           FB_MESSAGE: "${{ steps.ingest.outputs.title }}\n\n${{ steps.ingest.outputs.excerpt }}\n\n${{ steps.ingest.outputs.url }}"
-          # If you prefer a link post instead of a photo post, set FB_LINK_URL and omit FB_IMAGE_URL
-          # FB_LINK_URL: ${{ steps.ingest.outputs.url }}
-
-          # Overlay helper
+          
+          # Cloudinary credentials (REQUIRED for overlay)
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}        # ← ADD THIS
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}  # ← ADD THIS
+          
           # Optional: override heading
           # SOCIAL_TITLE: ${{ steps.ingest.outputs.title }}
 
