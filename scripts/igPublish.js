@@ -1,11 +1,10 @@
 // scripts/igPublish.js
 import fetch from "node-fetch";
 import crypto from "node:crypto";
-import { buildSocialImageUrl } from "./socialImage.js";
 
 /**
  * Instagram publishing via Page token (no IG_ACCESS_TOKEN required).
- * Fixes IG 9004 error by pre-generating a static JPG in Cloudinary before posting.
+ * Fixes IG 9004 error by pre-generating a static JPG in Cloudinary (eager transformation) before posting.
  *
  * Required env:
  *   PAGE_ID                 Facebook Page ID connected to IG account
@@ -15,7 +14,7 @@ import { buildSocialImageUrl } from "./socialImage.js";
  *   CLOUDINARY_API_SECRET   Cloudinary API secret
  *
  * Content env:
- *   MEDIA_URL               Base image/video URL
+ *   MEDIA_URL               Base image/video URL (publicly accessible)
  *   POST_TITLE              Title (also used for overlay heading)
  *   POST_EXCERPT            Optional text
  *   POST_URL                Optional link (plain text in caption)
@@ -62,38 +61,39 @@ function buildCaption() {
   return chunks.join("\n\n").trim().slice(0, 2200);
 }
 
-function safeBuildSocial(baseImageUrl, caption) {
-  if (!baseImageUrl) return "";
-  try {
-    const title = SOCIAL_TITLE || POST_TITLE || (caption || "").split("\n")[0] || "";
-    return buildSocialImageUrl(baseImageUrl, title, { sub: "Swipe for a sneak peek" });
-  } catch (e) {
-    console.warn("[igPublish] overlay build failed, falling back:", e.message);
-    return baseImageUrl;
-  }
-}
-
-// Signed upload: build a SHA-1 signature over params (excluding `file`)
-async function uploadToCloudinary(finalUrl) {
+/**
+ * Signed eager upload: upload the ORIGINAL image to Cloudinary and generate a derived JPG
+ * with overlay/text via eager transformation. Returns the static JPG URL IG will accept.
+ */
+async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
   requireEnv("CLOUDINARY_CLOUD_NAME", CLOUDINARY_CLOUD_NAME);
   requireEnv("CLOUDINARY_API_KEY", CLOUDINARY_API_KEY);
   requireEnv("CLOUDINARY_API_SECRET", CLOUDINARY_API_SECRET);
 
-  const timestamp = Math.floor(Date.now() / 1000);
   const folder = "social_overlayed";
+  const timestamp = Math.floor(Date.now() / 1000);
 
-  // Per Cloudinary docs, signature = sha1("folder=<...>&timestamp=<...><api_secret>")
-  const toSign = `folder=${folder}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
+  // Build the eager transformation (do not URL-encode in the signature)
+  const H1 = String(title || "").toUpperCase().replace(/\n/g, " ");
+  const SUB = String(sub || "").toUpperCase().replace(/\n/g, " ");
+
+  const eager =
+    `c_fill,w_1080,h_1350,q_auto,f_jpg` +
+    `/e_colorize:70,co_rgb:000000` +
+    `/l_text:Montserrat_90_bold:${encodeURIComponent(H1)},co_rgb:ffffff,g_center,y_-80,letter_spacing:3` +
+    `/l_text:Montserrat_32_bold:${encodeURIComponent(SUB)},co_rgb:ffffff,g_center,y_480,letter_spacing:3`;
+
+  // Sign parameters alphabetically by key: eager, folder, timestamp
+  const toSign = `eager=${eager}&folder=${folder}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
   const signature = crypto.createHash("sha1").update(toSign).digest("hex");
 
   const form = new URLSearchParams({
-    file: finalUrl,                        // Cloudinary fetches and stores the rendered JPG
+    file: baseImageUrl,                 // ORIGINAL image URL (no transforms)
     api_key: CLOUDINARY_API_KEY,
     timestamp: String(timestamp),
     folder,
-    signature,                             // signed!
-    // DO NOT include "overwrite" for uploads; use same public_id if you need deterministic naming
-    // public_id: "optional-deterministic-name"
+    eager,                              // generate derived asset with overlay/text
+    signature,
   });
 
   const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
@@ -103,12 +103,12 @@ async function uploadToCloudinary(finalUrl) {
   });
 
   const json = await res.json();
-  if (!res.ok || !json.secure_url) {
+  if (!res.ok || !Array.isArray(json.eager) || !json.eager[0]?.secure_url) {
     throw new Error(`Cloudinary upload failed: ${res.status} ${JSON.stringify(json)}`);
   }
-  return json.secure_url; // direct static JPG IG will accept
-}
 
+  return json.eager[0].secure_url; // static JPG with overlay
+}
 
 async function getPageToken() {
   const r = await fetch(
@@ -181,13 +181,16 @@ async function main() {
 
   // Build final media URL:
   // - Video: pass original URL
-  // - Image: apply overlay → upload to Cloudinary to get a static JPG URL IG accepts
+  // - Image: upload ORIGINAL with eager overlay → static JPG URL IG accepts
   let finalMediaUrl;
   if (IS_VIDEO) {
     finalMediaUrl = MEDIA_URL;
   } else {
-    const overlayUrl = safeBuildSocial(MEDIA_URL, caption); // Cloudinary transform URL
-    finalMediaUrl = await uploadToCloudinary(overlayUrl);   // stored, static .jpg URL
+    const title = SOCIAL_TITLE || POST_TITLE || (caption || "").split("\n")[0] || "";
+    finalMediaUrl = await uploadToCloudinaryWithEager(MEDIA_URL, {
+      title,
+      sub: "Swipe for a sneak peek",
+    });
   }
 
   const pageToken = await getPageToken();
