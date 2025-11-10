@@ -53,7 +53,7 @@ jobs:
       - name: Wait a few seconds
         run: sleep 5
 
-            - name: 📸 Post new blog to Instagram (via Page token)
+      - name: 📸 Post new blog to Instagram (via Page token)
         if: ${{ steps.ingest.outputs.cloudinary_url != '' }}
         run: node scripts/igPublish.js
         env:
