@@ -5,6 +5,33 @@ import { Clock, Mail, Phone, CheckCircle2, Facebook, Twitter, Linkedin, Instagra
 /***************************
  * Utilities (defensive)
  ***************************/
+
+// === Cloudinary responsive helpers ===
+const CLOUDINARY_HOST = "https://res.cloudinary.com";
+function isCloudinaryUrl(url) {
+  return typeof url === "string" && url.startsWith(CLOUDINARY_HOST);
+}
+
+// Insert transforms after `/image/upload/` (e.g. f_auto,q_auto:eco,dpr_auto,w_1200)
+function cld(url, { w, q = "auto:low", f = "auto", dpr = "auto" } = {}) {
+  if (!isCloudinaryUrl(url)) return url; // leave non-Cloudinary as-is
+  const marker = "/image/upload/";
+  const i = url.indexOf(marker);
+  if (i === -1) return url;
+  const prefix = url.slice(0, i + marker.length);
+  const rest = url.slice(i + marker.length);
+  const parts = [`f_${f}`, `q_${q}`, `dpr_${dpr}`];
+  if (w) parts.push(`w_${w}`);
+  return `${prefix}${parts.join(",")}/${rest}`;
+}
+
+// Build srcset string for the given widths
+function cldSrcSet(url, widths = [480, 768, 1024, 1280, 1600]) {
+  if (!isCloudinaryUrl(url)) return "";
+  return widths.map(w => `${cld(url, { w })} ${w}w`).join(", ");
+}
+
+
 function isNonEmptyString(v) {
   return typeof v === 'string' && v.trim().length > 0;
 }
@@ -15,22 +42,22 @@ function sanitizeContent(raw) {
   return raw
     .map((b) => {
       if (!b) return null;
-      
+
       if (typeof b === 'object' && b.type === 'list' && Array.isArray(b.items)) {
         return {
           type: 'list',
           items: b.items.map(item => stripLeadNums(String(item))).filter(isNonEmptyString)
         };
       }
-      
+
       if (typeof b === 'object' && (b.type === 'subheader' || b.type === 'paragraph')) {
         return { type: b.type, text: stripLeadNums(b.text) };
       }
-      
+
       if (typeof b === 'object' && 'text' in b) {
         return { type: 'paragraph', text: stripLeadNums(b.text) };
       }
-      
+
       return { type: 'paragraph', text: stripLeadNums(b) };
     })
     .filter((b) => {
@@ -102,11 +129,38 @@ function useImageWithFallback(src) {
   return resolved;
 }
 
-function SmartImage({ src, alt = '', className = '', ...rest }) {
-  const url = useImageWithFallback(src);
-  return (
+function SmartImage({ src, alt = "", className = "", sizes, ...rest }) {
+  // Reuse your existing fallback resolver:
+  const url = useImageWithFallback(src); // returns a working URL (may be fallback local)
+
+  // If it's Cloudinary, build responsive sets; otherwise just use the resolved URL
+  const isCLD = isCloudinaryUrl(url);
+  const srcSet = isCLD ? cldSrcSet(url) : undefined;
+  const srcAvif = isCLD ? cld(url, { w: 1280, f: "avif" }) : undefined;
+  const srcWebp = isCLD ? cld(url, { w: 1280, f: "webp" }) : undefined;
+  const srcFallback = isCLD ? cld(url, { w: 1280 }) : url;
+
+  // Sensible default sizes: card images are ~33vw on desktop, ~50vw tablet, 100vw mobile
+  const sizesAttr = sizes || "(min-width:1024px) 33vw, (min-width:768px) 50vw, 100vw";
+
+  return isCLD ? (
+    <picture>
+      <source type="image/avif" srcSet={srcSet?.replaceAll(" f_auto", " f_avif")} sizes={sizesAttr} />
+      <source type="image/webp" srcSet={srcSet?.replaceAll(" f_auto", " f_webp")} sizes={sizesAttr} />
+      <img
+        src={srcFallback}
+        srcSet={srcSet}
+        sizes={sizesAttr}
+        alt={alt}
+        className={className}
+        loading="lazy"
+        decoding="async"
+        {...rest}
+      />
+    </picture>
+  ) : (
     <img
-      src={url}
+      src={srcFallback}
       alt={alt}
       className={className}
       loading="lazy"
@@ -115,6 +169,7 @@ function SmartImage({ src, alt = '', className = '', ...rest }) {
     />
   );
 }
+
 
 function getPostFallback() {
   return FALLBACK_LOCAL;
@@ -223,27 +278,32 @@ function BlogCard({ post, onOpen }) {
   return (
     <article className="overflow-hidden hover-elevate active-elevate-2 transition-all h-full flex flex-col rounded-lg border border-border bg-card shadow-sm">
       <div className="aspect-video relative overflow-hidden">
-        <motion.div
-          key={bgSrc}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.35 }}
-          className="absolute inset-0"
-          style={{
-            backgroundImage: `url('${bgSrc || getPostFallback()}')`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-          }}
-          aria-hidden="true"
-        />
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={bgSrc}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.35 }}
+            className="absolute inset-0"
+          >
+            <SmartImage
+              src={bgSrc}
+              alt={p.title}
+              className="absolute inset-0 w-full h-full object-cover"
+              sizes="(min-width:1024px) 33vw, (min-width:768px) 50vw, 100vw"
+            />
+          </motion.div>
+        </AnimatePresence>
+
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-black/10 to-transparent pointer-events-none" />
       </div>
-      
+
       <div className="p-6 flex-1 flex flex-col">
         <h3 className="text-xl font-bold mb-2 line-clamp-2">{p.title}</h3>
         <p className="text-sm text-muted-foreground mb-2">{getDisplayDate(p)}</p>
         <p className="text-muted-foreground line-clamp-3 mb-4 flex-1">{p.excerpt}</p>
-        
+
         <button
           type="button"
           onClick={() => typeof onOpen === 'function' ? onOpen(p) : null}
@@ -291,9 +351,8 @@ function BlogIndex({ posts, onOpen, pageParam = 1, onPageChange }) {
           key={`p-${n}`}
           onClick={() => goTo(n)}
           disabled={n === cur}
-          className={`px-3 py-2 rounded border border-input text-sm ${
-            n === cur ? "bg-primary text-primary-foreground cursor-default" : "hover-elevate"
-          }`}
+          className={`px-3 py-2 rounded border border-input text-sm ${n === cur ? "bg-primary text-primary-foreground cursor-default" : "hover-elevate"
+            }`}
           aria-current={n === cur ? "page" : undefined}
         >
           {n}
@@ -413,12 +472,12 @@ function BlogPost({ post, calendlyUrl, navigate }) {
     <article className="py-12 bg-background">
       <div className="max-w-3xl mx-auto px-6">
         <button
-  type="button"
-  onClick={() => typeof navigate === 'function' ? navigate(`#/blog?page=${(typeof window !== 'undefined' && window.location.hash.includes('page=')) ? new URLSearchParams(window.location.hash.split('?')[1]).get('page') : (route?.page || 1)}`) : null}
-  className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:pointer-events-none hover-elevate active-elevate-2 h-9 px-4 py-2 mb-6"
->
-  ← Back to Blog
-</button>
+          type="button"
+          onClick={() => typeof navigate === 'function' ? navigate(`#/blog?page=${(typeof window !== 'undefined' && window.location.hash.includes('page=')) ? new URLSearchParams(window.location.hash.split('?')[1]).get('page') : (route?.page || 1)}`) : null}
+          className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:pointer-events-none hover-elevate active-elevate-2 h-9 px-4 py-2 mb-6"
+        >
+          ← Back to Blog
+        </button>
 
 
         <div className="mb-8">
@@ -429,15 +488,16 @@ function BlogPost({ post, calendlyUrl, navigate }) {
         </div>
 
         {isNonEmptyString(p.image) && (
-          <div className="aspect-video mb-8 rounded-lg overflow-hidden border border-border shadow-sm">
+          <div className="aspect-video mb-8 rounded-lg overflow-hidden border border-border shadow-sm relative">
             <SmartImage
               src={p.image}
               alt={p.title}
-              className="w-full h-full object-cover"
-              decoding="async"
+              className="absolute inset-0 w-full h-full object-cover"
+              sizes="(min-width:1024px) 800px, 100vw"
             />
           </div>
         )}
+
 
         <div className="prose prose-lg max-w-none">
           {p.content.length > 0 ? (
@@ -599,18 +659,18 @@ export default function App() {
   const goNext = () => hasNext && setActive((v) => v + 1);
 
   function parseHash() {
-  const raw = (typeof window !== 'undefined' ? window.location.hash : '') || '#/';
-  const withoutPound = raw.replace(/^#/, '');
-  const [pathPart, queryPart = ''] = withoutPound.split('?');
-  const parts = pathPart.split('/').filter(Boolean);
-  const params = new URLSearchParams(queryPart);
-  const page = Math.max(1, Number(params.get('page') || '1'));
+    const raw = (typeof window !== 'undefined' ? window.location.hash : '') || '#/';
+    const withoutPound = raw.replace(/^#/, '');
+    const [pathPart, queryPart = ''] = withoutPound.split('?');
+    const parts = pathPart.split('/').filter(Boolean);
+    const params = new URLSearchParams(queryPart);
+    const page = Math.max(1, Number(params.get('page') || '1'));
 
-  if (parts.length === 0) return { kind: 'home' };
-  if (parts[0] === 'blog' && parts.length === 1) return { kind: 'blog', page };
-  if (parts[0] === 'blog' && parts[1]) return { kind: 'post', slug: parts[1], page };
-  return { kind: 'home' };
-}
+    if (parts.length === 0) return { kind: 'home' };
+    if (parts[0] === 'blog' && parts.length === 1) return { kind: 'blog', page };
+    if (parts[0] === 'blog' && parts[1]) return { kind: 'post', slug: parts[1], page };
+    return { kind: 'home' };
+  }
   const [route, setRoute] = useState(parseHash());
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = (to) => { window.location.hash = to; setMobileMenuOpen(false); };
@@ -627,16 +687,16 @@ export default function App() {
   }, [route]);
 
   const openPost = (post, page = route.page || 1) => {
-  // Preserve pagination in URL
-  navigate(`#/blog/${post.slug}?page=${page}`);
-};
+    // Preserve pagination in URL
+    navigate(`#/blog/${post.slug}?page=${page}`);
+  };
 
   return (
     <div className="min-h-screen flex flex-col scroll-smooth">
       <header className="sticky top-0 z-40 backdrop-blur bg-background/80 border-b border-border">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <span className="font-bold tracking-tight text-xl">Flipwise Consulting</span>
-          
+
           {/* Desktop Navigation */}
           <nav className="hidden md:flex gap-8 text-sm font-medium">
             {route.kind !== 'home' && (
@@ -834,7 +894,7 @@ export default function App() {
                   <div className="rounded-lg border border-border bg-card p-6 md:p-8">
                     <h3 className="text-2xl font-bold mb-2">Send Us a Message</h3>
                     <p className="text-sm text-muted-foreground mb-6">Fill out the form below and we'll respond within 24 hours</p>
-                    
+
                     <form onSubmit={handleSubmit} className="space-y-6">
                       <div>
                         <label htmlFor="name" className="block text-sm font-medium mb-2">Name *</label>
@@ -926,13 +986,13 @@ export default function App() {
         )}
 
         {route.kind === 'blog' && (
-  <BlogIndex
-    posts={posts}
-    onOpen={openPost}
-    pageParam={route.page}
-    onPageChange={(p) => navigate(`#/blog?page=${p}`)}
-  />
-)}
+          <BlogIndex
+            posts={posts}
+            onOpen={openPost}
+            pageParam={route.page}
+            onPageChange={(p) => navigate(`#/blog?page=${p}`)}
+          />
+        )}
 
         {route.kind === 'post' && (
           <BlogPost
