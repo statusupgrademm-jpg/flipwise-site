@@ -24,7 +24,7 @@ jobs:
           cache: 'npm'
 
       - name: Install deps
-        run: npm i jsdom @mozilla/readability node-fetch openai cloudinary
+        run: npm i jsdom @mozilla/readability node-fetch openai cloudinary form-data
 
       - name: Ingest URL → JSON post + image
         id: ingest

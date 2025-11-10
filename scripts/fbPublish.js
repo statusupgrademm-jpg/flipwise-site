@@ -76,7 +76,7 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
   requireEnv("CLOUDINARY_API_KEY", CLOUDINARY_API_KEY);
   requireEnv("CLOUDINARY_API_SECRET", CLOUDINARY_API_SECRET);
 
-  console.log(`[FB-CLOUDINARY] Uploading original: ${baseImageUrl}`);
+  console.log(`[FB-CLOUDINARY] Step 1: Uploading with eager transformation...`);
 
   const folder = "social_overlayed";
   const format = "jpg";
@@ -122,9 +122,6 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
 
   const json = await res.json();
   
-  console.log(`[FB-CLOUDINARY] Response status: ${res.status}`);
-  console.log(`[FB-CLOUDINARY] Full response:`, JSON.stringify(json, null, 2));
-  
   if (!res.ok) {
     console.error(`[FB-CLOUDINARY] ❌ Upload failed: ${JSON.stringify(json, null, 2)}`);
     throw new Error(`Cloudinary upload failed: ${res.status} ${JSON.stringify(json)}`);
@@ -135,23 +132,56 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
     throw new Error(`Cloudinary eager transform failed: ${JSON.stringify(json)}`);
   }
 
-    const eagerData = json.eager[0];
-  console.log(`[FB-CLOUDINARY] Eager data:`, JSON.stringify(eagerData, null, 2));
+  const eagerData = json.eager[0];
+  const eagerUrl = eagerData.secure_url || eagerData.url;
   
-  // Use the eager's secure_url - Cloudinary has pre-generated this image
-  const staticUrl = eagerData.secure_url || eagerData.url;
-  
-  if (!staticUrl) {
-    throw new Error(`Cannot extract URL from Cloudinary eager response: ${JSON.stringify(eagerData)}`);
+  console.log(`[FB-CLOUDINARY] ✅ Eager transformation complete: ${eagerUrl.substring(0, 100)}...`);
+  console.log(`[FB-CLOUDINARY] Eager dimensions: ${eagerData.width}x${eagerData.height}`);
+
+  // Step 2: Download the eager-transformed image and re-upload as static asset
+  console.log(`[FB-CLOUDINARY] Step 2: Downloading transformed image...`);
+  const imageRes = await fetch(eagerUrl);
+  if (!imageRes.ok) {
+    throw new Error(`Failed to download eager image: ${imageRes.status}`);
   }
+  const imageBuffer = await imageRes.buffer();
+  console.log(`[FB-CLOUDINARY] Downloaded ${imageBuffer.length} bytes`);
+
+  // Step 3: Re-upload as static asset (no transformations)
+  console.log(`[FB-CLOUDINARY] Step 3: Re-uploading as static asset...`);
+  const finalFolder = "social_final";
+  const finalTimestamp = Math.floor(Date.now() / 1000);
   
-  console.log(`[FB-CLOUDINARY] ✅ Using eager URL: ${staticUrl}`);
-  console.log(`[FB-CLOUDINARY] Dimensions: ${eagerData.width}x${eagerData.height}`);
+  const finalToSign = 
+    `folder=${finalFolder}` +
+    `&format=${format}` +
+    `&timestamp=${finalTimestamp}` +
+    `${CLOUDINARY_API_SECRET}`;
+  const finalSignature = crypto.createHash("sha1").update(finalToSign).digest("hex");
+
+  const formData = new (await import('form-data')).default();
+  formData.append('file', imageBuffer, { filename: 'overlay.jpg' });
+  formData.append('api_key', CLOUDINARY_API_KEY);
+  formData.append('timestamp', String(finalTimestamp));
+  formData.append('folder', finalFolder);
+  formData.append('format', format);
+  formData.append('signature', finalSignature);
+
+  const finalRes = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
+    method: "POST",
+    body: formData,
+  });
+
+  const finalJson = await finalRes.json();
   
-  // Verify dimensions are correct (Facebook OG images are 1200x630)
-  if (eagerData.height !== 630 || eagerData.width !== 1200) {
-    console.warn(`[FB-CLOUDINARY] ⚠️ Unexpected dimensions: ${eagerData.width}x${eagerData.height}`);
+  if (!finalRes.ok) {
+    console.error(`[FB-CLOUDINARY] ❌ Re-upload failed: ${JSON.stringify(finalJson, null, 2)}`);
+    throw new Error(`Cloudinary re-upload failed: ${finalRes.status} ${JSON.stringify(finalJson)}`);
   }
+
+  const staticUrl = finalJson.secure_url;
+  console.log(`[FB-CLOUDINARY] ✅ Static asset created: ${staticUrl}`);
+  console.log(`[FB-CLOUDINARY] Final dimensions: ${finalJson.width}x${finalJson.height}`);
   
   return staticUrl;
 }
@@ -233,35 +263,23 @@ async function main() {
       console.warn(`[VALIDATION] ⚠️ Original IMAGE_URL failed probe - continuing anyway`);
     }
 
-    // Build overlayed image via eager upload
+    // Build overlayed image via eager upload, then re-upload as static asset
     const title = SOCIAL_TITLE || (caption || "").split("\n")[0] || "";
-    const eagerUrl = await uploadToCloudinaryWithEager(IMAGE_URL, {
+    const staticUrl = await uploadToCloudinaryWithEager(IMAGE_URL, {
       title,
       sub: "Swipe for a sneak peek",
     });
 
     // Probe with retry
-    console.log(`\n[VALIDATION] Probing eager URL...`);
-    const ok = await probeWithRetry(eagerUrl, 5);
+    console.log(`\n[VALIDATION] Probing static URL...`);
+    const ok = await probeWithRetry(staticUrl, 5);
     
-    if (ok) {
-      finalImageUrl = eagerUrl;
-      console.log(`[FINAL] ✅ Using Cloudinary eager URL`);
-    } else {
-      console.warn(`[FINAL] ⚠️ Eager URL probe failed, using original`);
-      if (!originalValid) {
-        throw new Error(`Both eager URL and original IMAGE_URL failed validation`);
-      }
-      finalImageUrl = IMAGE_URL;
+    if (!ok) {
+      throw new Error(`Static URL failed validation: ${staticUrl}`);
     }
-
-    // Final check
-    console.log(`\n[PRE-PUBLISH] Final validation...`);
-    const finalCheck = await probeImage(finalImageUrl, 99);
-    if (!finalCheck) {
-      throw new Error(`Final image URL failed validation: ${finalImageUrl}`);
-    }
-    console.log(`[PRE-PUBLISH] ✅ Validated`);
+    
+    finalImageUrl = staticUrl;
+    console.log(`[FINAL] ✅ Using static Cloudinary URL`);
   }
 
   console.log(`\n[FACEBOOK] Authenticating...`);

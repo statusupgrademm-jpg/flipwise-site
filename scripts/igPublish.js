@@ -2,28 +2,6 @@
 import fetch from "node-fetch";
 import crypto from "node:crypto";
 
-/**
- * Instagram publishing via Page token (no IG_ACCESS_TOKEN required).
- * Uses a signed Cloudinary eager upload to generate a static JPG with overlay before posting to IG.
- * Adds fetch-probe + retry to avoid IG aspect/availability errors.
- *
- * Required env:
- *   PAGE_ID                 Facebook Page ID connected to IG account
- *   FB_LONG_USER_TOKEN      Long-lived FB USER token
- *   CLOUDINARY_CLOUD_NAME   Cloudinary cloud name (e.g., "flipwise")
- *   CLOUDINARY_API_KEY      Cloudinary API key
- *   CLOUDINARY_API_SECRET   Cloudinary API secret
- *
- * Content env:
- *   MEDIA_URL               Base image/video URL (publicly accessible)
- *   POST_TITLE              Title (also used for overlay heading)
- *   POST_EXCERPT            Optional text
- *   POST_URL                Optional link (plain text in caption)
- *   POST_TAGS               CSV or space-separated tags
- *   IS_VIDEO                "true" to treat as video, else image
- *   SOCIAL_TITLE            Optional explicit overlay heading (overrides POST_TITLE)
- */
-
 const PAGE_ID = process.env.PAGE_ID;
 const USER_LONG_TOKEN = process.env.FB_LONG_USER_TOKEN;
 
@@ -35,7 +13,6 @@ const POST_TAGS = process.env.POST_TAGS || "";
 const IS_VIDEO = String(process.env.IS_VIDEO || "false").toLowerCase() === "true";
 const SOCIAL_TITLE = process.env.SOCIAL_TITLE || "";
 
-// Cloudinary creds (needed to upload the final static image)
 const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || "";
 const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY || "";
 const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || "";
@@ -117,7 +94,7 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
   requireEnv("CLOUDINARY_API_KEY", CLOUDINARY_API_KEY);
   requireEnv("CLOUDINARY_API_SECRET", CLOUDINARY_API_SECRET);
 
-  console.log(`[CLOUDINARY] Uploading original: ${baseImageUrl}`);
+  console.log(`[CLOUDINARY] Step 1: Uploading with eager transformation...`);
 
   const folder = "social_overlayed";
   const format = "jpg";
@@ -163,36 +140,66 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
 
   const json = await res.json();
   
-  console.log(`[CLOUDINARY] Response status: ${res.status}`);
-  console.log(`[CLOUDINARY] Full response:`, JSON.stringify(json, null, 2));
-  
   if (!res.ok) {
     console.error(`[CLOUDINARY] ❌ Upload failed: ${JSON.stringify(json, null, 2)}`);
     throw new Error(`Cloudinary upload failed: ${res.status} ${JSON.stringify(json)}`);
   }
   
   if (!Array.isArray(json.eager) || !json.eager[0]) {
-    console.error(`[CLOUDINARY] ❌ No eager data in response: ${JSON.stringify(json, null, 2)}`);
+    console.error(`[CLOUDINARY] ❌ No eager data: ${JSON.stringify(json, null, 2)}`);
     throw new Error(`Cloudinary eager transform failed: ${JSON.stringify(json)}`);
   }
 
   const eagerData = json.eager[0];
-  console.log(`[CLOUDINARY] Eager data:`, JSON.stringify(eagerData, null, 2));
+  const eagerUrl = eagerData.secure_url || eagerData.url;
   
-  // Use the eager's secure_url - Cloudinary has pre-generated this image
-  const staticUrl = eagerData.secure_url || eagerData.url;
-  
-  if (!staticUrl) {
-    throw new Error(`Cannot extract URL from Cloudinary eager response: ${JSON.stringify(eagerData)}`);
+  console.log(`[CLOUDINARY] ✅ Eager transformation complete: ${eagerUrl.substring(0, 100)}...`);
+  console.log(`[CLOUDINARY] Eager dimensions: ${eagerData.width}x${eagerData.height}`);
+
+  // Step 2: Download the eager-transformed image and re-upload as static asset
+  console.log(`[CLOUDINARY] Step 2: Downloading transformed image...`);
+  const imageRes = await fetch(eagerUrl);
+  if (!imageRes.ok) {
+    throw new Error(`Failed to download eager image: ${imageRes.status}`);
   }
+  const imageBuffer = await imageRes.buffer();
+  console.log(`[CLOUDINARY] Downloaded ${imageBuffer.length} bytes`);
+
+  // Step 3: Re-upload as static asset (no transformations)
+  console.log(`[CLOUDINARY] Step 3: Re-uploading as static asset...`);
+  const finalFolder = "social_final";
+  const finalTimestamp = Math.floor(Date.now() / 1000);
   
-  console.log(`[CLOUDINARY] ✅ Using eager URL: ${staticUrl}`);
-  console.log(`[CLOUDINARY] Dimensions: ${eagerData.width}x${eagerData.height}`);
+  const finalToSign = 
+    `folder=${finalFolder}` +
+    `&format=${format}` +
+    `&timestamp=${finalTimestamp}` +
+    `${CLOUDINARY_API_SECRET}`;
+  const finalSignature = crypto.createHash("sha1").update(finalToSign).digest("hex");
+
+  const formData = new (await import('form-data')).default();
+  formData.append('file', imageBuffer, { filename: 'overlay.jpg' });
+  formData.append('api_key', CLOUDINARY_API_KEY);
+  formData.append('timestamp', String(finalTimestamp));
+  formData.append('folder', finalFolder);
+  formData.append('format', format);
+  formData.append('signature', finalSignature);
+
+  const finalRes = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
+    method: "POST",
+    body: formData,
+  });
+
+  const finalJson = await finalRes.json();
   
-  // Verify dimensions are correct (Instagram requires square 1:1)
-  if (eagerData.height !== 1080 || eagerData.width < 1080) {
-    console.warn(`[CLOUDINARY] ⚠️ Unexpected dimensions: ${eagerData.width}x${eagerData.height}`);
+  if (!finalRes.ok) {
+    console.error(`[CLOUDINARY] ❌ Re-upload failed: ${JSON.stringify(finalJson, null, 2)}`);
+    throw new Error(`Cloudinary re-upload failed: ${finalRes.status} ${JSON.stringify(finalJson)}`);
   }
+
+  const staticUrl = finalJson.secure_url;
+  console.log(`[CLOUDINARY] ✅ Static asset created: ${staticUrl}`);
+  console.log(`[CLOUDINARY] Final dimensions: ${finalJson.width}x${finalJson.height}`);
   
   return staticUrl;
 }
@@ -324,32 +331,19 @@ async function main() {
     const title = SOCIAL_TITLE || POST_TITLE || (caption || "").split("\n")[0] || "";
     const sub = "Swipe for a sneak peek";
 
-    // Upload to Cloudinary with eager transformation (creates static overlayed JPG)
-    const eagerUrl = await uploadToCloudinaryWithEager(MEDIA_URL, { title, sub });
+    // Upload to Cloudinary with eager transformation, then re-upload as static asset
+    const staticUrl = await uploadToCloudinaryWithEager(MEDIA_URL, { title, sub });
 
     // Probe with retry to ensure the image is accessible
-    console.log(`\n[VALIDATION] Probing eager URL...`);
-    const ok = await probeWithRetry(eagerUrl, 5);
+    console.log(`\n[VALIDATION] Probing static URL...`);
+    const ok = await probeWithRetry(staticUrl, 5);
     
-    if (ok) {
-      finalMediaUrl = eagerUrl;
-      console.log(`[FINAL] ✅ Using Cloudinary eager URL`);
-    } else {
-      console.warn(`[FINAL] ⚠️ Eager URL probe failed, trying original`);
-      const originalValid = await probeImage(MEDIA_URL, 0);
-      if (!originalValid) {
-        throw new Error(`Both eager URL and original MEDIA_URL failed validation`);
-      }
-      finalMediaUrl = MEDIA_URL;
+    if (!ok) {
+      throw new Error(`Static URL failed validation: ${staticUrl}`);
     }
-
-    // Final validation before sending to Instagram
-    console.log(`\n[PRE-PUBLISH] Final validation...`);
-    const finalCheck = await probeImage(finalMediaUrl, 99);
-    if (!finalCheck) {
-      throw new Error(`Final media URL failed validation: ${finalMediaUrl}`);
-    }
-    console.log(`[PRE-PUBLISH] ✅ Validated`);
+    
+    finalMediaUrl = staticUrl;
+    console.log(`[FINAL] ✅ Using static Cloudinary URL`);
   }
 
   console.log(`\n[INSTAGRAM] Authenticating...`);
