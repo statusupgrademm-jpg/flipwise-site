@@ -78,11 +78,13 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
   const SUB = String(sub || "").toUpperCase().replace(/\n/g, " ");
 
     const eager =
-    // enforce exact 4:5 portrait and final pixel size IG accepts
-    `ar_4:5,c_fill,g_auto,w_1080,h_1350,q_auto,f_jpg` +
+    // Force exact 4:5 portrait at a known size; strip metadata.
+    // This yields a stored 1080x1350 JPG Cloudinary URL.
+    `ar_4:5,c_fill,w_1080,h_1350,g_auto,fl_strip_profile,q_auto,f_jpg` +
     `/e_colorize:70,co_rgb:000000` +
     `/l_text:Montserrat_90_bold:${encodeURIComponent(H1)},co_rgb:ffffff,g_center,y_-80` +
     `/l_text:Montserrat_32_bold:${encodeURIComponent(SUB)},co_rgb:ffffff,g_center,y_480`;
+
 
 
   // Sign parameters alphabetically by key: eager, folder, timestamp
