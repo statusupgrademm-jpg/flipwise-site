@@ -261,10 +261,9 @@ const POSTS_PER_PAGE = 10;
 
 function BlogIndex({ posts, onOpen, pageParam = 1, onPageChange }) {
   const list = Array.isArray(posts) ? posts : [];
-  const pageSize = 9; // adjust to your layout
+  const pageSize = 9; // adjust as needed
   const [page, setPage] = useState(pageParam || 1);
 
-  // Keep local state in sync with URL
   useEffect(() => {
     setPage(pageParam || 1);
   }, [pageParam]);
@@ -276,7 +275,60 @@ function BlogIndex({ posts, onOpen, pageParam = 1, onPageChange }) {
   const goTo = (p) => {
     const clamped = Math.min(totalPages, Math.max(1, p));
     setPage(clamped);
-    onPageChange?.(clamped); // writes ?page= to URL
+    onPageChange?.(clamped);
+  };
+
+  // Build numbered buttons with ellipses that jump ±5 pages
+  const buildPageButtons = () => {
+    const btns = [];
+    const cur = page;
+    const tp = totalPages;
+    const around = 1;
+
+    const add = (n) =>
+      btns.push(
+        <button
+          key={`p-${n}`}
+          onClick={() => goTo(n)}
+          disabled={n === cur}
+          className={`px-3 py-2 rounded border border-input text-sm ${
+            n === cur ? "bg-primary text-primary-foreground cursor-default" : "hover-elevate"
+          }`}
+          aria-current={n === cur ? "page" : undefined}
+        >
+          {n}
+        </button>
+      );
+
+    const visible = new Set([1, tp]);
+    for (let i = cur - around; i <= cur + around; i++) {
+      if (i > 1 && i < tp) visible.add(i);
+    }
+    if (cur <= 3) visible.add(2);
+    if (cur >= tp - 2) visible.add(tp - 1);
+
+    const ordered = [...visible].sort((a, b) => a - b);
+
+    for (let i = 0; i < ordered.length; i++) {
+      const n = ordered[i];
+      add(n);
+      const next = ordered[i + 1];
+      if (next && next - n > 1) {
+        const dir = next > n ? 1 : -1;
+        btns.push(
+          <button
+            key={`gap-${n}-${next}`}
+            onClick={() => goTo(cur + (dir > 0 ? 5 : -5))}
+            className="px-3 py-2 rounded border border-dashed border-input text-sm hover-elevate"
+            aria-label={dir > 0 ? "Jump forward 5 pages" : "Jump back 5 pages"}
+            title={dir > 0 ? "Jump +5" : "Jump -5"}
+          >
+            …
+          </button>
+        );
+      }
+    }
+    return btns;
   };
 
   return (
@@ -296,33 +348,44 @@ function BlogIndex({ posts, onOpen, pageParam = 1, onPageChange }) {
               <BlogCard
                 key={p.slug}
                 post={p}
-                onOpen={(pp) => onOpen(pp, page)} // pass current page to post open
+                onOpen={(pp) => onOpen(pp, page)}
               />
             );
           })}
         </div>
 
-        {/* Simple pagination controls */}
         {totalPages > 1 && (
-          <div className="mt-8 flex items-center justify-center gap-2">
+          <div className="mt-8 flex items-center justify-center gap-2 flex-wrap">
             <button
-              type="button"
-              onClick={() => goTo(page - 1)}
-              disabled={page <= 1}
-              className="px-3 py-2 rounded border border-input disabled:opacity-50"
+              onClick={() => goTo(1)}
+              disabled={page === 1}
+              className="px-3 py-2 rounded border border-input text-sm disabled:opacity-50"
             >
-              Prev
+              « First
             </button>
-            <span className="text-sm">
-              Page {page} of {totalPages}
-            </span>
             <button
-              type="button"
-              onClick={() => goTo(page + 1)}
-              disabled={page >= totalPages}
-              className="px-3 py-2 rounded border border-input disabled:opacity-50"
+              onClick={() => goTo(page - 1)}
+              disabled={page === 1}
+              className="px-3 py-2 rounded border border-input text-sm disabled:opacity-50"
             >
-              Next
+              ‹ Prev
+            </button>
+
+            {buildPageButtons()}
+
+            <button
+              onClick={() => goTo(page + 1)}
+              disabled={page === totalPages}
+              className="px-3 py-2 rounded border border-input text-sm disabled:opacity-50"
+            >
+              Next ›
+            </button>
+            <button
+              onClick={() => goTo(totalPages)}
+              disabled={page === totalPages}
+              className="px-3 py-2 rounded border border-input text-sm disabled:opacity-50"
+            >
+              Last »
             </button>
           </div>
         )}
@@ -330,6 +393,8 @@ function BlogIndex({ posts, onOpen, pageParam = 1, onPageChange }) {
     </section>
   );
 }
+
+
 
 
 function BlogPost({ post, calendlyUrl, navigate }) {
