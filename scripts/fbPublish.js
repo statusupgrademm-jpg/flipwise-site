@@ -87,7 +87,7 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
 
   // Facebook: 1200x630 landscape with darkened overlay + white text
   const eager =
-    `c_fill,w_1200,h_630,ar_191:100,g_auto,q_auto:good,f_jpg` +
+    `c_fill,w_1200,h_630,g_center,q_auto:good,f_jpg` +
     `/e_brightness:-40` +
     `/co_rgb:FFFFFF,l_text:arial_60_bold:${encodeURIComponent(H1)},g_north,y_200` +
     `/co_rgb:FFFFFF,l_text:arial_28_bold:${encodeURIComponent(SUB)},g_south,y_200`;

@@ -105,7 +105,7 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
 
   // Instagram: 1080x1080 square with darkened overlay + white text
   const eager =
-    `c_fill,w_1080,h_1080,ar_1:1,g_auto,q_auto:good,f_jpg` +
+    `c_fill,w_1080,h_1080,g_center,q_auto:good,f_jpg` +
     `/e_brightness:-40` +
     `/co_rgb:FFFFFF,l_text:arial_80_bold:${encodeURIComponent(H1)},g_north,y_400` +
     `/co_rgb:FFFFFF,l_text:arial_32_bold:${encodeURIComponent(SUB)},g_south,y_400`;
