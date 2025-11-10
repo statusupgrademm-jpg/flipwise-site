@@ -81,7 +81,7 @@ jobs:
           CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
           CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
 
-                - name: 💼 Post new blog to LinkedIn (Page or Person)
+      - name: 💼 Post new blog to LinkedIn (Page or Person)
         if: ${{ steps.ingest.outputs.cloudinary_url != '' }}
         run: node scripts/liPublish.js
         env:
