@@ -268,19 +268,51 @@ async function createMediaContainer({ igUserId, pageToken, mediaUrl, caption, is
 
 async function publishMedia({ igUserId, pageToken, creationId }) {
   console.log(`[INSTAGRAM] Publishing container: ${creationId}`);
+  
+  // Instagram needs time to process the media - wait before publishing
+  console.log(`[INSTAGRAM] Waiting for Instagram to process the media...`);
+  await sleep(15000); // Wait 15 seconds initially
+  
   const endpoint = `https://graph.facebook.com/v24.0/${igUserId}/media_publish`;
   const params = new URLSearchParams({
     access_token: pageToken,
     creation_id: creationId,
   });
-  const r = await fetch(endpoint, { method: "POST", body: params });
-  const j = await r.json();
-  if (!r.ok || !j.id) {
-    console.error(`[INSTAGRAM] ❌ Publish failed: ${JSON.stringify(j, null, 2)}`);
-    throw new Error(`IG media_publish failed: ${r.status} ${JSON.stringify(j)}`);
+  
+  // Retry logic with exponential backoff
+  let lastError;
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    console.log(`[INSTAGRAM] Publish attempt ${attempt}/5...`);
+    
+    const r = await fetch(endpoint, { method: "POST", body: params });
+    const j = await r.json();
+    
+    if (r.ok && j.id) {
+      console.log(`[INSTAGRAM] ✅ Published: ${j.id}`);
+      return j.id;
+    }
+    
+    // Check if it's a "not ready" error
+    if (j.error?.error_subcode === 2207027 || j.error?.code === 9007) {
+      console.log(`[INSTAGRAM] ⏳ Media not ready yet, waiting...`);
+      lastError = j;
+      
+      if (attempt < 5) {
+        const waitTime = 5000 * attempt; // 5s, 10s, 15s, 20s
+        console.log(`[INSTAGRAM] Waiting ${waitTime}ms before retry ${attempt + 1}...`);
+        await sleep(waitTime);
+        continue;
+      }
+    } else {
+      // Different error - fail immediately
+      console.error(`[INSTAGRAM] ❌ Publish failed: ${JSON.stringify(j, null, 2)}`);
+      throw new Error(`IG media_publish failed: ${r.status} ${JSON.stringify(j)}`);
+    }
   }
-  console.log(`[INSTAGRAM] ✅ Published: ${j.id}`);
-  return j.id;
+  
+  // All retries exhausted
+  console.error(`[INSTAGRAM] ❌ All retries exhausted. Last error: ${JSON.stringify(lastError, null, 2)}`);
+  throw new Error(`IG media_publish failed after 5 attempts: ${JSON.stringify(lastError)}`);
 }
 
 /* ---------- main ---------- */
