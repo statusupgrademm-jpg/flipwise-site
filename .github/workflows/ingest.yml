@@ -53,13 +53,15 @@ jobs:
       - name: Wait a few seconds
         run: sleep 5
 
-      - name: 📸 Post new blog to Instagram
+            - name: 📸 Post new blog to Instagram (via Page token)
         if: ${{ steps.ingest.outputs.cloudinary_url != '' }}
         run: node scripts/igPublish.js
         env:
+          # Auth (Page-token path)
           FB_LONG_USER_TOKEN: ${{ secrets.FB_LONG_USER_TOKEN }}
           PAGE_ID: ${{ secrets.PAGE_ID }}
-          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+
+          # Content
           MEDIA_URL: ${{ steps.ingest.outputs.cloudinary_url }}
           POST_TITLE: ${{ steps.ingest.outputs.title }}
           POST_EXCERPT: ${{ steps.ingest.outputs.excerpt }}
@@ -67,14 +69,27 @@ jobs:
           POST_TAGS: "realestate,flipwise,renovation,investing"
           IS_VIDEO: "false"
 
-      - name: 📘 Post new blog to Facebook Page
+          # Overlay helper
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          # Optional: override heading shown on the image
+          # SOCIAL_TITLE: "Custom Heading"
+
+      - name: 📘 Post new blog to Facebook Page (photo post with overlay)
         if: ${{ steps.ingest.outputs.cloudinary_url != '' }}
         run: node scripts/fbPublish.js
         env:
+          # Auth
           FB_LONG_USER_TOKEN: ${{ secrets.FB_LONG_USER_TOKEN }}
           PAGE_ID: ${{ secrets.PAGE_ID }}
-          # reuse the same data that went to IG
+
+          # Content
           FB_IMAGE_URL: ${{ steps.ingest.outputs.cloudinary_url }}
           FB_MESSAGE: "${{ steps.ingest.outputs.title }}\n\n${{ steps.ingest.outputs.excerpt }}\n\n${{ steps.ingest.outputs.url }}"
-          # Optional: if you prefer a link post instead of a photo post, include FB_LINK_URL and omit FB_IMAGE_URL
+          # If you prefer a link post instead of a photo post, set FB_LINK_URL and omit FB_IMAGE_URL
           # FB_LINK_URL: ${{ steps.ingest.outputs.url }}
+
+          # Overlay helper
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          # Optional: override heading
+          # SOCIAL_TITLE: ${{ steps.ingest.outputs.title }}
+
