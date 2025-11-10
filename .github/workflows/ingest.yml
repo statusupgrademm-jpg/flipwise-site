@@ -69,10 +69,13 @@ jobs:
           POST_TAGS: "realestate,flipwise,renovation,investing"
           IS_VIDEO: "false"
 
-          # Overlay helper
+          # Overlay + Cloudinary upload (required)
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
-          # Optional: override heading shown on the image
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          # Optional: override heading
           # SOCIAL_TITLE: "Custom Heading"
+
 
       - name: 📘 Post new blog to Facebook Page (photo post with overlay)
         if: ${{ steps.ingest.outputs.cloudinary_url != '' }}
