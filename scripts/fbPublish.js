@@ -1,117 +1,41 @@
 // scripts/fbPublish.js
 import fetch from "node-fetch";
 import crypto from "node:crypto";
+import { renderSocialImage } from "./renderSocialImage.js";
 
 /**
- * Publishes to a Facebook Page. Uses a PAGE_TOKEN derived from a long-lived USER token.
- * If an image is provided, uses /photos with eager Cloudinary upload; otherwise /feed (text/link).
+ * Facebook Page photo post using locally rendered JPG + signed Cloudinary upload.
  */
 
 const PAGE_ID = process.env.PAGE_ID;
 const USER_LONG_TOKEN = process.env.FB_LONG_USER_TOKEN;
-const MESSAGE = process.env.FB_MESSAGE || "";
-const IMAGE_URL = process.env.FB_IMAGE_URL || "";
-const LINK_URL = process.env.FB_LINK_URL || "";
+
+const FB_IMAGE_URL = process.env.FB_IMAGE_URL || ""; // base image
+const FB_MESSAGE = process.env.FB_MESSAGE || "";
 const SOCIAL_TITLE = process.env.SOCIAL_TITLE || "";
 
-// Cloudinary creds
 const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || "";
 const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY || "";
 const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || "";
 
-function requireEnv(name, val) {
-  if (!val) throw new Error(`Missing env: ${name}`);
-}
+function requireEnv(name, val) { if (!val) throw new Error(`Missing env: ${name}`); }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-async function probeImage(url, attemptNum = 1) {
-  console.log(`[FB-PROBE #${attemptNum}] Testing: ${url}`);
-  try {
-    const r = await fetch(url, { method: "HEAD", timeout: 10000 });
-    console.log(`[FB-PROBE #${attemptNum}] Status: ${r.status}`);
-    
-    if (!r.ok) {
-      console.error(`[FB-PROBE #${attemptNum}] ❌ Failed: HTTP ${r.status}`);
-      return false;
-    }
-    
-    const ct = (r.headers.get("content-type") || "").toLowerCase();
-    const len = parseInt(r.headers.get("content-length") || "0", 10);
-    
-    console.log(`[FB-PROBE #${attemptNum}] Content-Type: ${ct}`);
-    console.log(`[FB-PROBE #${attemptNum}] Content-Length: ${len} bytes`);
-    
-    const isValid = ct.includes("image/") && len > 10000;
-    console.log(`[FB-PROBE #${attemptNum}] ${isValid ? '✅ Valid' : '❌ Invalid'}`);
-    
-    return isValid;
-  } catch (err) {
-    console.error(`[FB-PROBE #${attemptNum}] ❌ Exception: ${err.message}`);
-    return false;
-  }
-}
-
-async function probeWithRetry(url, maxRetries = 5) {
-  for (let i = 1; i <= maxRetries; i++) {
-    const delay = i === 1 ? 0 : 1000 * Math.pow(1.5, i - 2);
-    if (delay > 0) {
-      console.log(`[FB-RETRY] Waiting ${delay}ms before attempt ${i}...`);
-      await sleep(delay);
-    }
-    
-    const ok = await probeImage(url, i);
-    if (ok) {
-      console.log(`[FB-RETRY] ✅ Success on attempt ${i}/${maxRetries}`);
-      return true;
-    }
-  }
-  
-  console.error(`[FB-RETRY] ❌ All ${maxRetries} attempts failed`);
-  return false;
-}
-
-async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
-  requireEnv("CLOUDINARY_CLOUD_NAME", CLOUDINARY_CLOUD_NAME);
-  requireEnv("CLOUDINARY_API_KEY", CLOUDINARY_API_KEY);
-  requireEnv("CLOUDINARY_API_SECRET", CLOUDINARY_API_SECRET);
-
-  console.log(`[FB-CLOUDINARY] Step 1: Uploading with eager transformation...`);
-
-  const folder = "social_overlayed";
-  const format = "jpg";
+async function signedCloudinaryUploadJpgBuffer(buf, { folder = "social_overlayed", publicId = "" } = {}) {
   const timestamp = Math.floor(Date.now() / 1000);
-
-  const H1 = String(title || "").toUpperCase().replace(/\n/g, " ");
-  const SUB = String(sub || "").toUpperCase().replace(/\n/g, " ");
-
-  // Facebook: 1200x630 landscape with darkened overlay + white text
-  const eager =
-    `c_fill,w_1200,h_630,g_center,q_auto:good,f_jpg` +
-    `/e_brightness:-40` +
-    `/co_rgb:FFFFFF,l_text:arial_60_bold:${encodeURIComponent(H1)},g_north,y_200` +
-    `/co_rgb:FFFFFF,l_text:arial_28_bold:${encodeURIComponent(SUB)},g_south,y_200`;
-
-  console.log(`[FB-CLOUDINARY] Transform: ${eager.substring(0, 100)}...`);
-
-  const toSign =
-    `async=false` +
-    `&eager=${eager}` +
-    `&folder=${folder}` +
-    `&format=${format}` +
-    `&timestamp=${timestamp}` +
-    `${CLOUDINARY_API_SECRET}`;
+  const format = "jpg";
+  const params = { folder, format, timestamp };
+  const toSign = Object.keys(params).sort().map(k => `${k}=${params[k]}`).join("&") + CLOUDINARY_API_SECRET;
   const signature = crypto.createHash("sha1").update(toSign).digest("hex");
+  const fileDataUri = `data:image/jpeg;base64,${buf.toString("base64")}`;
 
   const form = new URLSearchParams({
-    file: baseImageUrl,
+    file: fileDataUri,
     api_key: CLOUDINARY_API_KEY,
     timestamp: String(timestamp),
     folder,
-    eager,
     format,
-    async: "false",
     signature,
+    ...(publicId ? { public_id: publicId } : {}),
   });
 
   const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
@@ -119,185 +43,48 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: form,
   });
-
   const json = await res.json();
-  
-  if (!res.ok) {
-    console.error(`[FB-CLOUDINARY] ❌ Upload failed: ${JSON.stringify(json, null, 2)}`);
-    throw new Error(`Cloudinary upload failed: ${res.status} ${JSON.stringify(json)}`);
+  if (!res.ok || !json.secure_url) {
+    throw new Error(`Cloudinary binary upload failed: ${res.status} ${JSON.stringify(json)}`);
   }
-  
-  if (!Array.isArray(json.eager) || !json.eager[0]) {
-    console.error(`[FB-CLOUDINARY] ❌ No eager data: ${JSON.stringify(json, null, 2)}`);
-    throw new Error(`Cloudinary eager transform failed: ${JSON.stringify(json)}`);
-  }
-
-  const eagerData = json.eager[0];
-  const eagerUrl = eagerData.secure_url || eagerData.url;
-  
-  console.log(`[FB-CLOUDINARY] ✅ Eager transformation complete: ${eagerUrl.substring(0, 100)}...`);
-  console.log(`[FB-CLOUDINARY] Eager dimensions: ${eagerData.width}x${eagerData.height}`);
-
-  // Step 2: Download the eager-transformed image and re-upload as static asset
-  console.log(`[FB-CLOUDINARY] Step 2: Downloading transformed image...`);
-  const imageRes = await fetch(eagerUrl);
-  if (!imageRes.ok) {
-    throw new Error(`Failed to download eager image: ${imageRes.status}`);
-  }
-  const imageBuffer = await imageRes.buffer();
-  console.log(`[FB-CLOUDINARY] Downloaded ${imageBuffer.length} bytes`);
-
-  // Step 3: Re-upload as static asset (no transformations)
-  console.log(`[FB-CLOUDINARY] Step 3: Re-uploading as static asset...`);
-  const finalFolder = "social_final";
-  const finalTimestamp = Math.floor(Date.now() / 1000);
-  
-  const finalToSign = 
-    `folder=${finalFolder}` +
-    `&format=${format}` +
-    `&timestamp=${finalTimestamp}` +
-    `${CLOUDINARY_API_SECRET}`;
-  const finalSignature = crypto.createHash("sha1").update(finalToSign).digest("hex");
-
-  const formData = new (await import('form-data')).default();
-  formData.append('file', imageBuffer, { filename: 'overlay.jpg' });
-  formData.append('api_key', CLOUDINARY_API_KEY);
-  formData.append('timestamp', String(finalTimestamp));
-  formData.append('folder', finalFolder);
-  formData.append('format', format);
-  formData.append('signature', finalSignature);
-
-  const finalRes = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
-    method: "POST",
-    body: formData,
-  });
-
-  const finalJson = await finalRes.json();
-  
-  if (!finalRes.ok) {
-    console.error(`[FB-CLOUDINARY] ❌ Re-upload failed: ${JSON.stringify(finalJson, null, 2)}`);
-    throw new Error(`Cloudinary re-upload failed: ${finalRes.status} ${JSON.stringify(finalJson)}`);
-  }
-
-  const staticUrl = finalJson.secure_url;
-  console.log(`[FB-CLOUDINARY] ✅ Static asset created: ${staticUrl}`);
-  console.log(`[FB-CLOUDINARY] Final dimensions: ${finalJson.width}x${finalJson.height}`);
-  
-  return staticUrl;
+  return json.secure_url;
 }
 
 async function getPageToken() {
-  const r = await fetch(
-    `https://graph.facebook.com/v24.0/me/accounts?access_token=${USER_LONG_TOKEN}`
-  );
+  const r = await fetch(`https://graph.facebook.com/v24.0/me/accounts?access_token=${USER_LONG_TOKEN}`);
   const j = await r.json();
   if (!j?.data) throw new Error(`me/accounts failed: ${JSON.stringify(j)}`);
-  const page = j.data.find((p) => p.id === PAGE_ID);
-  if (!page?.access_token) {
-    throw new Error(
-      `PAGE_TOKEN not found for PAGE_ID=${PAGE_ID}. me/accounts=${JSON.stringify(j)}`
-    );
-  }
+  const page = j.data.find(p => p.id === PAGE_ID);
+  if (!page?.access_token) throw new Error(`PAGE_TOKEN not found for PAGE_ID=${PAGE_ID}.`);
   return page.access_token;
 }
 
 async function postPhoto({ pageId, pageToken, imageUrl, caption }) {
-  console.log(`[FACEBOOK] Posting photo: ${imageUrl}`);
-  console.log(`[FACEBOOK] Caption length: ${caption?.length || 0} chars`);
-  
-  const form = new URLSearchParams({
-    access_token: pageToken,
-    url: imageUrl,
-    caption: caption || "",
-  });
-  const r = await fetch(`https://graph.facebook.com/v24.0/${pageId}/photos`, {
-    method: "POST",
-    body: form,
-  });
+  const form = new URLSearchParams({ access_token: pageToken, url: imageUrl, caption: caption || "" });
+  const r = await fetch(`https://graph.facebook.com/v24.0/${pageId}/photos`, { method: "POST", body: form });
   const j = await r.json();
-  if (!r.ok || !j.id) {
-    console.error(`[FACEBOOK] ❌ /photos failed: ${JSON.stringify(j, null, 2)}`);
-    throw new Error(`FB /photos failed: ${r.status} ${JSON.stringify(j)}`);
-  }
-  console.log(`[FACEBOOK] ✅ Photo posted: ${j.id}`);
-  return j.id;
-}
-
-async function postFeed({ pageId, pageToken, message, link }) {
-  console.log(`[FACEBOOK] Posting feed update`);
-  const form = new URLSearchParams({
-    access_token: pageToken,
-    message: message || "",
-  });
-  if (link) form.set("link", link);
-  const r = await fetch(`https://graph.facebook.com/v24.0/${pageId}/feed`, {
-    method: "POST",
-    body: form,
-  });
-  const j = await r.json();
-  if (!r.ok || !j.id) {
-    console.error(`[FACEBOOK] ❌ /feed failed: ${JSON.stringify(j, null, 2)}`);
-    throw new Error(`FB /feed failed: ${r.status} ${JSON.stringify(j)}`);
-  }
-  console.log(`[FACEBOOK] ✅ Feed posted: ${j.id}`);
+  if (!r.ok || !j.id) throw new Error(`FB /photos failed: ${r.status} ${JSON.stringify(j)}`);
   return j.id;
 }
 
 async function main() {
   requireEnv("PAGE_ID", PAGE_ID);
   requireEnv("FB_LONG_USER_TOKEN", USER_LONG_TOKEN);
+  requireEnv("FB_IMAGE_URL", FB_IMAGE_URL);
+  requireEnv("CLOUDINARY_CLOUD_NAME", CLOUDINARY_CLOUD_NAME);
+  requireEnv("CLOUDINARY_API_KEY", CLOUDINARY_API_KEY);
+  requireEnv("CLOUDINARY_API_SECRET", CLOUDINARY_API_SECRET);
 
-  console.log(`\n========== FACEBOOK PUBLISH START ==========`);
-  console.log(`Original IMAGE_URL: ${IMAGE_URL || 'none'}`);
+  const title = SOCIAL_TITLE || FB_MESSAGE.split("\n")[0] || "";
 
-  const caption = MESSAGE;
-  const link = LINK_URL;
+  // 1080x1350 (use 1080x1080 if you prefer square for FB)
+  const jpgBuffer = await renderSocialImage(FB_IMAGE_URL, { width: 1080, height: 1350, title, sub: "SWIPE FOR A SNEAK PEEK" });
+  const finalUrl = await signedCloudinaryUploadJpgBuffer(jpgBuffer);
 
-  let finalImageUrl = "";
-
-  if (IMAGE_URL) {
-    // Validate original
-    console.log(`\n[VALIDATION] Checking original IMAGE_URL...`);
-    const originalValid = await probeImage(IMAGE_URL, 0);
-    if (!originalValid) {
-      console.warn(`[VALIDATION] ⚠️ Original IMAGE_URL failed probe - continuing anyway`);
-    }
-
-    // Build overlayed image via eager upload, then re-upload as static asset
-    const title = SOCIAL_TITLE || (caption || "").split("\n")[0] || "";
-    const staticUrl = await uploadToCloudinaryWithEager(IMAGE_URL, {
-      title,
-      sub: "Swipe for a sneak peek",
-    });
-
-    // Probe with retry
-    console.log(`\n[VALIDATION] Probing static URL...`);
-    const ok = await probeWithRetry(staticUrl, 5);
-    
-    if (!ok) {
-      throw new Error(`Static URL failed validation: ${staticUrl}`);
-    }
-    
-    finalImageUrl = staticUrl;
-    console.log(`[FINAL] ✅ Using static Cloudinary URL`);
-  }
-
-  console.log(`\n[FACEBOOK] Authenticating...`);
   const pageToken = await getPageToken();
+  const postId = await postPhoto({ pageId: PAGE_ID, pageToken, imageUrl: finalUrl, caption: FB_MESSAGE });
 
-  let postId;
-  if (finalImageUrl) {
-    postId = await postPhoto({ pageId: PAGE_ID, pageToken, imageUrl: finalImageUrl, caption });
-  } else {
-    postId = await postFeed({ pageId: PAGE_ID, pageToken, message: caption, link });
-  }
-
-  console.log(`\n========== ✅ SUCCESS ==========`);
-  console.log(JSON.stringify({ ok: true, pagePostId: postId, finalUrl: finalImageUrl }, null, 2));
+  console.log(JSON.stringify({ ok: true, pagePostId: postId, finalUrl }, null, 2));
 }
 
-main().catch((err) => {
-  console.error(`\n========== ❌ FATAL ERROR ==========`);
-  console.error(err);
-  process.exit(1);
-});
+main().catch(err => { console.error(err); process.exit(1); });

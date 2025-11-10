@@ -24,7 +24,7 @@ jobs:
           cache: 'npm'
 
       - name: Install deps
-        run: npm i jsdom @mozilla/readability node-fetch openai cloudinary form-data
+        run: npm i jsdom @mozilla/readability node-fetch openai cloudinary sharp
 
       - name: Ingest URL → JSON post + image
         id: ingest
@@ -57,43 +57,28 @@ jobs:
         if: ${{ steps.ingest.outputs.cloudinary_url != '' }}
         run: node scripts/igPublish.js
         env:
-          # Auth (Page-token path)
           FB_LONG_USER_TOKEN: ${{ secrets.FB_LONG_USER_TOKEN }}
           PAGE_ID: ${{ secrets.PAGE_ID }}
-
-          # Content
           MEDIA_URL: ${{ steps.ingest.outputs.cloudinary_url }}
           POST_TITLE: ${{ steps.ingest.outputs.title }}
           POST_EXCERPT: ${{ steps.ingest.outputs.excerpt }}
           POST_URL: ${{ steps.ingest.outputs.url }}
           POST_TAGS: "realestate,flipwise,renovation,investing"
           IS_VIDEO: "false"
-
-          # Overlay + Cloudinary upload (required)
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
           CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
-          # Optional: override heading
-          # SOCIAL_TITLE: "Custom Heading"
 
-
-      - name: 📘 Post new blog to Facebook Page (photo post with overlay)
+      - name: 📘 Post new blog to Facebook Page
         if: ${{ steps.ingest.outputs.cloudinary_url != '' }}
         run: node scripts/fbPublish.js
         env:
-          # Auth
           FB_LONG_USER_TOKEN: ${{ secrets.FB_LONG_USER_TOKEN }}
           PAGE_ID: ${{ secrets.PAGE_ID }}
-
-          # Content
           FB_IMAGE_URL: ${{ steps.ingest.outputs.cloudinary_url }}
           FB_MESSAGE: "${{ steps.ingest.outputs.title }}\n\n${{ steps.ingest.outputs.excerpt }}\n\n${{ steps.ingest.outputs.url }}"
-          
-          # Cloudinary credentials (REQUIRED for overlay)
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
-          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}        # ← ADD THIS
-          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}  # ← ADD THIS
-          
-          # Optional: override heading
-          # SOCIAL_TITLE: ${{ steps.ingest.outputs.title }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+
 
