@@ -78,6 +78,7 @@ function safeBuildSocial(baseImageUrl, caption) {
   }
 }
 
+// In fbPublish.js - TEMPORARY FIX
 async function main() {
   requireEnv("PAGE_ID", PAGE_ID);
   requireEnv("FB_LONG_USER_TOKEN", USER_LONG_TOKEN);
@@ -85,13 +86,14 @@ async function main() {
   const caption = MESSAGE;
   const link = LINK_URL;
 
-  // Build transformed image ONLY for FB image posts
-  const imageUrl = safeBuildSocial(IMAGE_URL, caption);
+  // Use the plain IMAGE_URL directly (no transforms) for now
+  const imageUrl = IMAGE_URL;  // Simple fix - use original URL
 
   const pageToken = await getPageToken();
 
   let postId;
   if (imageUrl) {
+    console.log(`[FACEBOOK] Posting photo: ${imageUrl}`);
     postId = await postPhoto({ pageId: PAGE_ID, pageToken, imageUrl, caption });
   } else {
     postId = await postFeed({ pageId: PAGE_ID, pageToken, message: caption, link });
