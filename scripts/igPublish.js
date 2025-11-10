@@ -91,6 +91,7 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
   requireEnv("CLOUDINARY_API_SECRET", CLOUDINARY_API_SECRET);
 
   const folder = "social_overlayed";
+  const format = "jpg"; // force real JPG file + .jpg extension
   const timestamp = Math.floor(Date.now() / 1000);
 
   const H1 = String(title || "").toUpperCase().replace(/\n/g, " ");
@@ -103,8 +104,14 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
     `/l_text:Montserrat_90_bold:${encodeURIComponent(H1)},co_rgb:ffffff,g_center,y_-60` +
     `/l_text:Montserrat_32_bold:${encodeURIComponent(SUB)},co_rgb:ffffff,g_center,y_360`;
 
-  // Sign (alphabetical by key): eager, folder, timestamp
-  const toSign = `eager=${eager}&folder=${folder}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
+  // SIGNATURE — include eager, folder, format, timestamp (alphabetical by key)
+  // signature = sha1("eager=<...>&folder=<...>&format=jpg&timestamp=<...><api_secret>")
+  const toSign =
+    `eager=${eager}` +
+    `&folder=${folder}` +
+    `&format=${format}` +
+    `&timestamp=${timestamp}` +
+    `${CLOUDINARY_API_SECRET}`;
   const signature = crypto.createHash("sha1").update(toSign).digest("hex");
 
   const form = new URLSearchParams({
@@ -112,7 +119,8 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
     api_key: CLOUDINARY_API_KEY,
     timestamp: String(timestamp),
     folder,
-    eager, // generate derived asset with overlay/text
+    eager,             // derive asset with overlay/text
+    format,            // ensure stored as JPG with .jpg extension
     signature,
   });
 
@@ -127,7 +135,7 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
     throw new Error(`Cloudinary upload failed: ${res.status} ${JSON.stringify(json)}`);
   }
 
-  return json.eager[0].secure_url; // static JPG with overlay
+  return json.eager[0].secure_url; // static JPG with .jpg extension
 }
 
 /* ---------- facebook/instagram graph helpers ---------- */
