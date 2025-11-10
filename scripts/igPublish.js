@@ -1,5 +1,6 @@
 // scripts/igPublish.js
 import fetch from "node-fetch";
+import crypto from "node:crypto";
 import { buildSocialImageUrl } from "./socialImage.js";
 
 /**
@@ -72,35 +73,42 @@ function safeBuildSocial(baseImageUrl, caption) {
   }
 }
 
-// Pre-generate a **static** JPG in Cloudinary by uploading the transformed URL.
-// Returns a direct .jpg URL that IG accepts.
+// Signed upload: build a SHA-1 signature over params (excluding `file`)
 async function uploadToCloudinary(finalUrl) {
   requireEnv("CLOUDINARY_CLOUD_NAME", CLOUDINARY_CLOUD_NAME);
   requireEnv("CLOUDINARY_API_KEY", CLOUDINARY_API_KEY);
   requireEnv("CLOUDINARY_API_SECRET", CLOUDINARY_API_SECRET);
 
+  const timestamp = Math.floor(Date.now() / 1000);
+  const folder = "social_overlayed";
+
+  // Per Cloudinary docs, signature = sha1("folder=<...>&timestamp=<...><api_secret>")
+  const toSign = `folder=${folder}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
+  const signature = crypto.createHash("sha1").update(toSign).digest("hex");
+
+  const form = new URLSearchParams({
+    file: finalUrl,                        // Cloudinary fetches and stores the rendered JPG
+    api_key: CLOUDINARY_API_KEY,
+    timestamp: String(timestamp),
+    folder,
+    signature,                             // signed!
+    // DO NOT include "overwrite" for uploads; use same public_id if you need deterministic naming
+    // public_id: "optional-deterministic-name"
+  });
+
   const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
     method: "POST",
-    headers: {
-      Authorization:
-        "Basic " + Buffer.from(`${CLOUDINARY_API_KEY}:${CLOUDINARY_API_SECRET}`).toString("base64"),
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      file: finalUrl,              // Cloudinary fetches & stores the rendered image
-      folder: "social_overlayed",  // keep outputs organized
-      overwrite: "true",
-      // public_id: optional custom name if you want deterministic URLs
-      // format: "jpg" // not needed; the rendered URL is already JPG
-    }),
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form,
   });
 
   const json = await res.json();
   if (!res.ok || !json.secure_url) {
     throw new Error(`Cloudinary upload failed: ${res.status} ${JSON.stringify(json)}`);
   }
-  return json.secure_url; // direct static JPG
+  return json.secure_url; // direct static JPG IG will accept
 }
+
 
 async function getPageToken() {
   const r = await fetch(
