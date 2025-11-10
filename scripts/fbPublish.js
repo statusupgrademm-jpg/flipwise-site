@@ -87,7 +87,7 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
 
   // Facebook-optimized: 1200x630 (recommended OG image size)
   const eager =
-    `ar_1.91:1,c_fill,w_1200,h_630,g_auto,fl_strip_profile,q_auto,f_jpg` +
+    `ar_191:100,c_fill,w_1200,h_630,g_auto,fl_strip_profile,q_auto,f_jpg` +
     `/e_colorize:70,co_rgb:000000` +
     `/l_text:Montserrat_70_bold:${encodeURIComponent(H1)},co_rgb:ffffff,g_center,y_-40` +
     `/l_text:Montserrat_28_bold:${encodeURIComponent(SUB)},co_rgb:ffffff,g_center,y_240`;
