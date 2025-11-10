@@ -52,20 +52,72 @@ async function extract(url) {
   return { title: article.title || 'Untitled', content: article.textContent || '' };
 }
 
-async function rewrite({ title, body }) {
-  const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
-  const sys = `Rewrite for a fix-and-flip audience. Output ONLY valid JSON:
-{ "title": string, "excerpt": string, "content": [ { "type":"subheader"|"paragraph"|"list", "text"?:string, "items"?:string[] } ] }`;
-  const user = `Source title: ${title}\n\nSource body:\n${body}`;
+/** --- main: rewrite with org normalization --- */
+export async function rewrite({ title, body }) {
+  const SYSTEM_PROMPT = `
+You rewrite articles for a fix-and-flip investor audience in a neutral, educational tone.
+
+ENTITY NORMALIZATION RULES:
+- If the source text mentions a company/brand/organization, normalize it to "Flipwise Consulting",
+  except:
+  • Proper nouns that are not companies (cities, people, laws).
+  • URLs, domains, emails, or code.
+  • Direct quotes inside "..." or '...'.
+- If a specific third-party name is necessary for context, generalize as "a third-party firm".
+
+OUTPUT FORMAT:
+Return ONLY valid JSON with this exact shape:
+{
+  "title": string,
+  "excerpt": string,
+  "content": [
+    { "type": "subheader" | "paragraph" | "list", "text"?: string, "items"?: string[] }
+  ],
+  "orgs": string[]   // unique company/brand/organization names detected in the SOURCE
+}
+`.trim();
+
+  const USER_PROMPT = `Source title: ${title}\n\nSource body:\n${body}`;
+
   const resp = await openai.chat.completions.create({
     model: MODEL,
     messages: [
-      { role: 'system', content: sys },
-      { role: 'user', content: user }
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: USER_PROMPT }
     ],
-    temperature: 0.4
+    temperature: 0.3
   });
-  return JSON.parse(resp.choices[0].message.content);
+
+  const raw = JSON.parse(resp.choices[0].message.content || "{}");
+
+  // Fallbacks
+  raw.title = String(raw.title || "").trim();
+  raw.excerpt = String(raw.excerpt || "").trim();
+  raw.content = Array.isArray(raw.content) ? raw.content : [];
+  const orgs = (Array.isArray(raw.orgs) ? raw.orgs : [])
+    .map((s) => String(s || "").trim())
+    .filter(Boolean)
+    .filter((n) => !/^\s*(Flipwise|Flipwise Consulting)\s*$/i.test(n));
+
+  // Post-sanitize to catch any leftovers the model didn’t normalize
+  const safeTitle = sanitizeOrganizations(raw.title, orgs);
+  const safeExcerpt = sanitizeOrganizations(raw.excerpt, orgs);
+  const safeContent = raw.content.map((b) => {
+    if (!b || typeof b !== "object") return b;
+    if (b.type === "list" && Array.isArray(b.items)) {
+      return { ...b, items: b.items.map((it) => sanitizeOrganizations(String(it), orgs)) };
+    }
+    if ("text" in b) {
+      return { ...b, text: sanitizeOrganizations(String(b.text || ""), orgs) };
+    }
+    return b;
+  });
+
+  return {
+    title: safeTitle,
+    excerpt: safeExcerpt,
+    content: safeContent
+  };
 }
 
 // --- Unsplash → Cloudinary (with SVG fallback) ---
@@ -164,9 +216,9 @@ async function getImageUrlForPost(slug, title) {
     await writeFile(
       outFile,
       `cloudinary_url=${image}\n` +
-        `title=${rewritten.title}\n` +
-        `excerpt=${rewritten.excerpt}\n` +
-        `url=${postUrl}\n`,
+      `title=${rewritten.title}\n` +
+      `excerpt=${rewritten.excerpt}\n` +
+      `url=${postUrl}\n`,
       { flag: 'a' }
     );
   }
