@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Clock, Mail, Phone, CheckCircle2, Facebook, Twitter, Linkedin, Instagram, Menu, X } from "lucide-react";
+import { Clock, Mail, Phone, CheckCircle2, Facebook, Twitter, Linkedin, Instagram, Menu, X, ChevronLeft, ChevronRight } from "lucide-react";
 
 /***************************
  * Utilities (defensive)
@@ -61,9 +61,8 @@ function safePostShape(post) {
  * Smart image with fallback (Original → Cloudinary → /post-fallback.jpg)
  ***************************/
 const FALLBACK_CLOUDINARY = 'https://res.cloudinary.com/dfr4brde4/image/upload/v1762755537/post-fallback_zwaacw.jpg';
-const FALLBACK_LOCAL = '/post-fallback.jpg'; // place this in /public
+const FALLBACK_LOCAL = '/post-fallback.jpg';
 
-// Hook that resolves to the first loadable URL from a list of candidates.
 function useImageWithFallback(src) {
   const [resolved, setResolved] = useState(
     isNonEmptyString(src) ? src : (FALLBACK_CLOUDINARY || FALLBACK_LOCAL)
@@ -103,7 +102,6 @@ function useImageWithFallback(src) {
   return resolved;
 }
 
-// <img/> component version (used in BlogPost hero image)
 function SmartImage({ src, alt = '', className = '', ...rest }) {
   const url = useImageWithFallback(src);
   return (
@@ -119,7 +117,7 @@ function SmartImage({ src, alt = '', className = '', ...rest }) {
 }
 
 function getPostFallback() {
-  return FALLBACK_LOCAL; // always a known-good public file
+  return FALLBACK_LOCAL;
 }
 
 /***************************
@@ -220,12 +218,10 @@ function BlogCard({ post, onOpen }) {
   const p = safePostShape(post);
   if (!p) return null;
 
-  // Resolve a final, loadable URL for use as a CSS background
   const bgSrc = useImageWithFallback(p.image);
 
   return (
     <article className="overflow-hidden hover-elevate active-elevate-2 transition-all h-full flex flex-col rounded-lg border border-border bg-card shadow-sm">
-      {/* Background image area with cross-fade */}
       <div className="aspect-video relative overflow-hidden">
         <motion.div
           key={bgSrc}
@@ -261,8 +257,28 @@ function BlogCard({ post, onOpen }) {
   );
 }
 
-function BlogIndex({ posts, onOpen }) {
+const POSTS_PER_PAGE = 10;
+
+function BlogIndex({ posts, onOpen, pageParam = 1, onPageChange }) {
   const list = Array.isArray(posts) ? posts : [];
+  const pageSize = 9; // adjust to your layout
+  const [page, setPage] = useState(pageParam || 1);
+
+  // Keep local state in sync with URL
+  useEffect(() => {
+    setPage(pageParam || 1);
+  }, [pageParam]);
+
+  const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+  const start = (page - 1) * pageSize;
+  const pageItems = list.slice(start, start + pageSize);
+
+  const goTo = (p) => {
+    const clamped = Math.min(totalPages, Math.max(1, p));
+    setPage(clamped);
+    onPageChange?.(clamped); // writes ?page= to URL
+  };
+
   return (
     <section id="blog" className="py-16 md:py-24 bg-background">
       <div className="max-w-7xl mx-auto px-6">
@@ -272,16 +288,49 @@ function BlogIndex({ posts, onOpen }) {
             Guides, checklists, and playbooks from active deals
           </p>
         </div>
+
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {list.map((raw) => {
+          {pageItems.map((raw) => {
             const p = safePostShape(raw);
-            return <BlogCard key={p.slug} post={p} onOpen={onOpen} />;
+            return (
+              <BlogCard
+                key={p.slug}
+                post={p}
+                onOpen={(pp) => onOpen(pp, page)} // pass current page to post open
+              />
+            );
           })}
         </div>
+
+        {/* Simple pagination controls */}
+        {totalPages > 1 && (
+          <div className="mt-8 flex items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => goTo(page - 1)}
+              disabled={page <= 1}
+              className="px-3 py-2 rounded border border-input disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <span className="text-sm">
+              Page {page} of {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => goTo(page + 1)}
+              disabled={page >= totalPages}
+              className="px-3 py-2 rounded border border-input disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        )}
       </div>
     </section>
   );
 }
+
 
 function BlogPost({ post, calendlyUrl, navigate }) {
   const p = safePostShape(post);
@@ -299,12 +348,13 @@ function BlogPost({ post, calendlyUrl, navigate }) {
     <article className="py-12 bg-background">
       <div className="max-w-3xl mx-auto px-6">
         <button
-          type="button"
-          onClick={() => typeof navigate === 'function' ? navigate('#/blog') : null}
-          className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:pointer-events-none hover-elevate active-elevate-2 h-9 px-4 py-2 mb-6"
-        >
-          ← Back to Blog
-        </button>
+  type="button"
+  onClick={() => typeof navigate === 'function' ? navigate(`#/blog?page=${(typeof window !== 'undefined' && window.location.hash.includes('page=')) ? new URLSearchParams(window.location.hash.split('?')[1]).get('page') : (route?.page || 1)}`) : null}
+  className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:pointer-events-none hover-elevate active-elevate-2 h-9 px-4 py-2 mb-6"
+>
+  ← Back to Blog
+</button>
+
 
         <div className="mb-8">
           <h1 className="text-4xl md:text-5xl font-bold mb-6">{p.title}</h1>
@@ -353,9 +403,9 @@ function BlogPost({ post, calendlyUrl, navigate }) {
             href={calendlyUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:pointer-events-none bg-primary text-primary-foreground hover-elevate active-elevate-2 h-10 py-2 px-6"
+            className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-primary text-primary-foreground hover-elevate active-elevate-2 h-10 px-6"
           >
-            Book a Call
+            Schedule a Call
           </a>
         </div>
 
@@ -483,14 +533,19 @@ export default function App() {
   const goPrev = () => hasPrev && setActive((v) => v - 1);
   const goNext = () => hasNext && setActive((v) => v + 1);
 
-  const parseHash = () => {
-    const hash = (typeof window !== 'undefined' ? window.location.hash : '') || '#/';
-    const parts = hash.replace(/^#/, '').split('/').filter(Boolean);
-    if (parts.length === 0) return { kind: 'home' };
-    if (parts[0] === 'blog' && parts.length === 1) return { kind: 'blog' };
-    if (parts[0] === 'blog' && parts[1]) return { kind: 'post', slug: parts[1] };
-    return { kind: 'home' };
-  };
+  function parseHash() {
+  const raw = (typeof window !== 'undefined' ? window.location.hash : '') || '#/';
+  const withoutPound = raw.replace(/^#/, '');
+  const [pathPart, queryPart = ''] = withoutPound.split('?');
+  const parts = pathPart.split('/').filter(Boolean);
+  const params = new URLSearchParams(queryPart);
+  const page = Math.max(1, Number(params.get('page') || '1'));
+
+  if (parts.length === 0) return { kind: 'home' };
+  if (parts[0] === 'blog' && parts.length === 1) return { kind: 'blog', page };
+  if (parts[0] === 'blog' && parts[1]) return { kind: 'post', slug: parts[1], page };
+  return { kind: 'home' };
+}
   const [route, setRoute] = useState(parseHash());
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = (to) => { window.location.hash = to; setMobileMenuOpen(false); };
@@ -506,7 +561,10 @@ export default function App() {
     }
   }, [route]);
 
-  const openPost = (post) => navigate(`#/blog/${post.slug}`);
+  const openPost = (post, page = route.page || 1) => {
+  // Preserve pagination in URL
+  navigate(`#/blog/${post.slug}?page=${page}`);
+};
 
   return (
     <div className="min-h-screen flex flex-col scroll-smooth">
@@ -802,7 +860,14 @@ export default function App() {
           </>
         )}
 
-        {route.kind === 'blog' && <BlogIndex posts={posts} onOpen={openPost} />}
+        {route.kind === 'blog' && (
+  <BlogIndex
+    posts={posts}
+    onOpen={openPost}
+    pageParam={route.page}
+    onPageChange={(p) => navigate(`#/blog?page=${p}`)}
+  />
+)}
 
         {route.kind === 'post' && (
           <BlogPost
