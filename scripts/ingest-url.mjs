@@ -1,5 +1,5 @@
 // scripts/ingest-url.mjs
-// Generate blog posts + uploads imiage
+// Generate blog posts + uploads image
 import fetch from 'node-fetch';
 import { JSDOM } from 'jsdom';
 import { Readability } from '@mozilla/readability';
@@ -31,6 +31,9 @@ requireEnv('OPENAI_API_KEY', OPENAI_API_KEY);
 requireEnv('CLOUDINARY_URL', process.env.CLOUDINARY_URL);
 requireEnv('UNSPLASH_ACCESS_KEY', UNSPLASH_ACCESS_KEY);
 
+// OpenAI client
+const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+
 // Cloudinary: reads CLOUDINARY_URL from env; secure URLs on
 cloudinary.v2.config({ secure: true });
 
@@ -51,6 +54,48 @@ async function extract(url) {
   const article = reader.parse() || {};
   return { title: article.title || 'Untitled', content: article.textContent || '' };
 }
+
+/** ------------------ Org-name sanitizer helpers ------------------ */
+// Split text into modifiable parts and "locked" parts (URLs/emails) we won't touch
+function splitByUrlsEmails(text) {
+  const urlEmailRe = /((?:https?:\/\/|www\.)\S+|[\w.+-]+@[\w.-]+\.\w+)/gi;
+  const parts = [];
+  let last = 0, m;
+  while ((m = urlEmailRe.exec(text)) !== null) {
+    if (m.index > last) parts.push({ kind: 'text', value: text.slice(last, m.index) });
+    parts.push({ kind: 'locked', value: m[0] });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push({ kind: 'text', value: text.slice(last) });
+  return parts;
+}
+
+// Replace organization names only outside quotes; preserve possessives
+function replaceOrgsInSegment(segment, orgs, replacement = 'Flipwise Consulting') {
+  return segment.replace(/(?:'[^']*'|"[^"]*")|([^'"]+)/g, (match, outside) => {
+    if (!outside) return match; // inside quotes -> leave as-is
+    let out = outside;
+    for (const org of orgs) {
+      if (!org || org.length < 2) continue;
+      const esc = org.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp(`\\b${esc}(?:'s)?\\b`, 'gi');
+      out = out.replace(re, (m) => {
+        const possessive = /'s$/i.test(m) ? "'s" : '';
+        return replacement + possessive;
+      });
+    }
+    return out;
+  });
+}
+
+function sanitizeOrganizations(text, orgCandidates, replacement = 'Flipwise Consulting') {
+  if (!text || !Array.isArray(orgCandidates) || orgCandidates.length === 0) return text;
+  const parts = splitByUrlsEmails(text);
+  return parts
+    .map((p) => (p.kind === 'locked' ? p.value : replaceOrgsInSegment(p.value, orgCandidates, replacement)))
+    .join('');
+}
+/** --------------------------------------------------------------- */
 
 /** --- main: rewrite with org normalization --- */
 export async function rewrite({ title, body }) {
@@ -82,20 +127,20 @@ Return ONLY valid JSON with this exact shape:
   const resp = await openai.chat.completions.create({
     model: MODEL,
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: USER_PROMPT }
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content: USER_PROMPT }
     ],
     temperature: 0.3
   });
 
-  const raw = JSON.parse(resp.choices[0].message.content || "{}");
+  const raw = JSON.parse(resp.choices[0].message.content || '{}');
 
   // Fallbacks
-  raw.title = String(raw.title || "").trim();
-  raw.excerpt = String(raw.excerpt || "").trim();
+  raw.title = String(raw.title || '').trim();
+  raw.excerpt = String(raw.excerpt || '').trim();
   raw.content = Array.isArray(raw.content) ? raw.content : [];
   const orgs = (Array.isArray(raw.orgs) ? raw.orgs : [])
-    .map((s) => String(s || "").trim())
+    .map((s) => String(s || '').trim())
     .filter(Boolean)
     .filter((n) => !/^\s*(Flipwise|Flipwise Consulting)\s*$/i.test(n));
 
@@ -103,12 +148,12 @@ Return ONLY valid JSON with this exact shape:
   const safeTitle = sanitizeOrganizations(raw.title, orgs);
   const safeExcerpt = sanitizeOrganizations(raw.excerpt, orgs);
   const safeContent = raw.content.map((b) => {
-    if (!b || typeof b !== "object") return b;
-    if (b.type === "list" && Array.isArray(b.items)) {
+    if (!b || typeof b !== 'object') return b;
+    if (b.type === 'list' && Array.isArray(b.items)) {
       return { ...b, items: b.items.map((it) => sanitizeOrganizations(String(it), orgs)) };
     }
-    if ("text" in b) {
-      return { ...b, text: sanitizeOrganizations(String(b.text || ""), orgs) };
+    if ('text' in b) {
+      return { ...b, text: sanitizeOrganizations(String(b.text || ''), orgs) };
     }
     return b;
   });
