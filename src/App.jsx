@@ -58,34 +58,68 @@ function safePostShape(post) {
 }
 
 /***************************
- * Smart image with fallback (Cloudinary → local assets)
+ * Smart image with fallback (Original → Cloudinary → /post-fallback.jpg)
  ***************************/
-function SmartImage({ src, fallbackSrc, alt = '', className = '', ...rest }) {
-  const initial = isNonEmptyString(src) ? src : fallbackSrc;
-  const [current, setCurrent] = useState(initial);
-  const [usedFallback, setUsedFallback] = useState(!isNonEmptyString(src));
+const FALLBACK_CLOUDINARY = 'https://res.cloudinary.com/dfr4brde4/image/upload/v1762755537/post-fallback_zwaacw.jpg';
+const FALLBACK_LOCAL = '/post-fallback.jpg'; // place this in /public
 
+// Hook that resolves to the first loadable URL from a list of candidates.
+function useImageWithFallback(src) {
+  const [resolved, setResolved] = useState(
+    isNonEmptyString(src) ? src : (FALLBACK_CLOUDINARY || FALLBACK_LOCAL)
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const candidates = [
+      isNonEmptyString(src) ? src : null,
+      FALLBACK_CLOUDINARY,
+      FALLBACK_LOCAL,
+    ].filter(Boolean);
+
+    (async () => {
+      for (const url of candidates) {
+        try {
+          await new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(true);
+            img.onerror = reject;
+            img.src = url;
+          });
+          if (!cancelled) setResolved(url);
+          break;
+        } catch {
+          // try next
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
+
+  return resolved;
+}
+
+// <img/> component version (used in BlogPost hero image)
+function SmartImage({ src, alt = '', className = '', ...rest }) {
+  const url = useImageWithFallback(src);
   return (
     <img
-      src={current}
+      src={url}
       alt={alt}
       className={className}
-      onError={() => {
-        if (!usedFallback && fallbackSrc) {
-          setUsedFallback(true);
-          setCurrent(fallbackSrc);
-        }
-      }}
+      loading="lazy"
+      decoding="async"
       {...rest}
     />
   );
 }
 
-function getPostFallback(postLike) {
-  const slug = postLike && typeof postLike === 'object' && isNonEmptyString(postLike.slug)
-    ? postLike.slug.trim()
-    : '';
-  return slug ? `/assets/${slug}.jpg` : `/assets/post-fallback.jpg`;
+function getPostFallback() {
+  return FALLBACK_LOCAL; // always a known-good public file
 }
 
 /***************************
@@ -185,17 +219,28 @@ function BeforeAfterSlider({ item }) {
 function BlogCard({ post, onOpen }) {
   const p = safePostShape(post);
   if (!p) return null;
-  const fallback = getPostFallback(p);
+
+  // Resolve a final, loadable URL for use as a CSS background
+  const bgSrc = useImageWithFallback(p.image);
+
   return (
     <article className="overflow-hidden hover-elevate active-elevate-2 transition-all h-full flex flex-col rounded-lg border border-border bg-card shadow-sm">
+      {/* Background image area with cross-fade */}
       <div className="aspect-video relative overflow-hidden">
-        <SmartImage
-          src={p.image}
-          fallbackSrc={fallback}
-          alt={p.title}
-          className="w-full h-full object-cover"
-          decoding="async"
+        <motion.div
+          key={bgSrc}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.35 }}
+          className="absolute inset-0"
+          style={{
+            backgroundImage: `url('${bgSrc || getPostFallback()}')`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+          }}
+          aria-hidden="true"
         />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-black/10 to-transparent pointer-events-none" />
       </div>
       
       <div className="p-6 flex-1 flex flex-col">
@@ -272,7 +317,6 @@ function BlogPost({ post, calendlyUrl, navigate }) {
           <div className="aspect-video mb-8 rounded-lg overflow-hidden border border-border shadow-sm">
             <SmartImage
               src={p.image}
-              fallbackSrc={getPostFallback(p)}
               alt={p.title}
               className="w-full h-full object-cover"
               decoding="async"
