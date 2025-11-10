@@ -112,7 +112,7 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
 
 async function getPageToken() {
   const r = await fetch(
-    `https://graph.facebook.com/v24.0/me/accounts?access_token=${USER_LONG_USER_TOKEN}`
+    `https://graph.facebook.com/v24.0/me/accounts?access_token=${USER_LONG_TOKEN}`
   );
   const j = await r.json();
   if (!j?.data) throw new Error(`me/accounts failed: ${JSON.stringify(j)}`);
