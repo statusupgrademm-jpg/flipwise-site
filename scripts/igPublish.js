@@ -127,7 +127,7 @@ async function main() {
   const title = SOCIAL_TITLE || POST_TITLE || (caption || "").split("\n")[0] || "";
 
   // 1080x1350  (use 1080x1080 if you prefer square)
-  const jpgBuffer = await renderSocialImage(MEDIA_URL, { width: 1080, height: 1350, title, sub: "SWIPE FOR A SNEAK PEEK" });
+  const jpgBuffer = await renderSocialImage(MEDIA_URL, { width: 1080, height: 1350, title, sub: "READ OUR BLOG POST" });
   const finalUrl = await signedCloudinaryUploadJpgBuffer(jpgBuffer);
 
   const pageToken = await getPageToken();

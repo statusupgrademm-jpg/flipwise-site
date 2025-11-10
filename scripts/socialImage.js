@@ -27,7 +27,7 @@ function parseCloudinary(url) {
 
 export function buildSocialImageUrl(baseUrlOrId, title, opts = {}) {
   const {
-    sub = "SWIPE FOR A SNEAK PEEK",
+    sub = "READ OUR BLOG POST",
     width = 1080,
     height = 1350,
     font = "Montserrat",
