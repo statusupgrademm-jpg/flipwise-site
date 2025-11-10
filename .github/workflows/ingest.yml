@@ -81,17 +81,17 @@ jobs:
           CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
           CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
 
-      - name: 💼 Post new blog to LinkedIn (Page or Person)
-        if: ${{ steps.ingest.outputs.cloudinary_url != '' }}
-        run: node scripts/liPublish.js
-        env:
-          LINKEDIN_TOKEN: ${{ secrets.LINKEDIN_TOKEN }}
-          LINKEDIN_ACTOR_URN: ${{ secrets.LINKEDIN_ACTOR_URN }}   # urn:li:organization:XXXX or urn:li:person:YYYY
-          LI_IMAGE_URL: ${{ steps.ingest.outputs.cloudinary_url }}
-          LI_TITLE: ${{ steps.ingest.outputs.title }}
-          LI_DESCRIPTION: ${{ steps.ingest.outputs.excerpt }}
-          LI_URL: ${{ steps.ingest.outputs.url }}
-          # Optional custom text (falls back to title + excerpt)
-          LI_COMMENTARY: ${{ steps.ingest.outputs.social_text }}
+      # - name: 💼 Post new blog to LinkedIn (Page or Person)
+      #   if: ${{ steps.ingest.outputs.cloudinary_url != '' }}
+      #   run: node scripts/liPublish.js
+      #   env:
+      #     LINKEDIN_TOKEN: ${{ secrets.LINKEDIN_TOKEN }}
+      #     LINKEDIN_ACTOR_URN: ${{ secrets.LINKEDIN_ACTOR_URN }}   # urn:li:organization:XXXX or urn:li:person:YYYY
+      #     LI_IMAGE_URL: ${{ steps.ingest.outputs.cloudinary_url }}
+      #     LI_TITLE: ${{ steps.ingest.outputs.title }}
+      #     LI_DESCRIPTION: ${{ steps.ingest.outputs.excerpt }}
+      #     LI_URL: ${{ steps.ingest.outputs.url }}
+      #     # Optional custom text (falls back to title + excerpt)
+      #     LI_COMMENTARY: ${{ steps.ingest.outputs.social_text }}
 
 
