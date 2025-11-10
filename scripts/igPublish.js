@@ -137,13 +137,14 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
 
   console.log(`[CLOUDINARY] Transform: ${eager.substring(0, 100)}...`);
 
-  // SIGNATURE
+  // 🔧 FIX: Include async in signature (alphabetical order)
   const toSign =
-    `eager=${eager}` +
-    `&folder=${folder}` +
-    `&format=${format}` +
-    `&timestamp=${timestamp}` +
-    `${CLOUDINARY_API_SECRET}`;
+  `async=false` +           // 🔧 ADD THIS
+  `&eager=${eager}` +
+  `&folder=${folder}` +
+  `&format=${format}` +
+  `&timestamp=${timestamp}` +
+  `${CLOUDINARY_API_SECRET}`;
   const signature = crypto.createHash("sha1").update(toSign).digest("hex");
 
   const form = new URLSearchParams({
@@ -153,8 +154,8 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
     folder,
     eager,
     format,
+    async: "false",
     signature,
-    async: "false", // 🔧 FIX: Force synchronous processing
   });
 
   const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
@@ -166,7 +167,7 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
   const json = await res.json();
   
   console.log(`[CLOUDINARY] Response status: ${res.status}`);
-  console.log(`[CLOUDINARY] Full response:`, JSON.stringify(json, null, 2)); // 🔧 DEBUG: See full response
+  console.log(`[CLOUDINARY] Full response:`, JSON.stringify(json, null, 2));
   
   if (!res.ok) {
     console.error(`[CLOUDINARY] ❌ Upload failed: ${JSON.stringify(json, null, 2)}`);
@@ -181,24 +182,21 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
   const eagerData = json.eager[0];
   console.log(`[CLOUDINARY] Eager data:`, JSON.stringify(eagerData, null, 2));
   
-  // 🔧 FIX: Extract public_id from eager response and build clean static URL
-  // The eager response should have a public_id for the derived asset
+  // Extract public_id from eager response and build clean static URL
   let staticUrl;
   
   if (eagerData.public_id) {
     // Build a clean URL with no transforms using the derived asset's public_id
     staticUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${eagerData.public_id}.jpg`;
-    console.log(`[CLOUDINARY] ✅ Built static URL from public_id: ${staticUrl}`);
+    console.log(`[CLOUDINARY] ✅ Built static URL from eager public_id: ${staticUrl}`);
   } else if (eagerData.secure_url && !eagerData.secure_url.includes('/upload/ar_')) {
     // If secure_url doesn't contain transforms, use it directly
     staticUrl = eagerData.secure_url;
     console.log(`[CLOUDINARY] ✅ Using secure_url (no transforms): ${staticUrl}`);
   } else {
-    // Fallback: Try to extract the base public_id and construct URL
-    const basePublicId = json.public_id; // Original upload public_id
+    // Fallback: Use original public_id and construct URL
+    const basePublicId = json.public_id;
     if (basePublicId) {
-      // Cloudinary derives eager assets with a different public_id, but if not available,
-      // we'll use the original with no transforms
       staticUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${basePublicId}.jpg`;
       console.warn(`[CLOUDINARY] ⚠️ Using base public_id as fallback: ${staticUrl}`);
     } else {
