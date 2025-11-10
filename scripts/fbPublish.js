@@ -82,7 +82,7 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
   const format = "jpg";
   const timestamp = Math.floor(Date.now() / 1000);
 
-   const H1 = String(title || "").toUpperCase().replace(/\n/g, " ");
+  const H1 = String(title || "").toUpperCase().replace(/\n/g, " ");
   const SUB = String(sub || "").toUpperCase().replace(/\n/g, " ");
 
   // Facebook: 1200x630 landscape with darkened overlay + white text
@@ -123,6 +123,7 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
   const json = await res.json();
   
   console.log(`[FB-CLOUDINARY] Response status: ${res.status}`);
+  console.log(`[FB-CLOUDINARY] Full response:`, JSON.stringify(json, null, 2));
   
   if (!res.ok) {
     console.error(`[FB-CLOUDINARY] ❌ Upload failed: ${JSON.stringify(json, null, 2)}`);
@@ -135,24 +136,26 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
   }
 
   const eagerData = json.eager[0];
-  console.log(`[FB-CLOUDINARY] Eager URL: ${eagerData.secure_url}`);
+  console.log(`[FB-CLOUDINARY] Eager data:`, JSON.stringify(eagerData, null, 2));
   
+  // Build clean static URL - use eager's secure_url
   let staticUrl;
   
-  if (eagerData.public_id) {
-    staticUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${eagerData.public_id}.jpg`;
-    console.log(`[FB-CLOUDINARY] ✅ Built static URL from public_id: ${staticUrl}`);
-  } else if (eagerData.secure_url && !eagerData.secure_url.includes('/upload/ar_')) {
+  if (eagerData.secure_url) {
     staticUrl = eagerData.secure_url;
-    console.log(`[FB-CLOUDINARY] ✅ Using secure_url: ${staticUrl}`);
+    console.log(`[FB-CLOUDINARY] ✅ Using eager secure_url: ${staticUrl}`);
+  } else if (json.public_id) {
+    // Fallback: construct from public_id
+    staticUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${json.public_id}.jpg`;
+    console.log(`[FB-CLOUDINARY] ⚠️ Constructed from public_id: ${staticUrl}`);
   } else {
-    const basePublicId = json.public_id;
-    if (basePublicId) {
-      staticUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${basePublicId}.jpg`;
-      console.warn(`[FB-CLOUDINARY] ⚠️ Using base public_id: ${staticUrl}`);
-    } else {
-      throw new Error(`Cannot construct static URL. Eager: ${JSON.stringify(eagerData)}`);
-    }
+    throw new Error(`Cannot extract static URL from Cloudinary response: ${JSON.stringify(json)}`);
+  }
+  
+  // Verify it's truly static (no transform markers in URL)
+  if (staticUrl.includes('/c_fill,') || staticUrl.includes('/e_brightness')) {
+    console.error(`[FB-CLOUDINARY] ❌ URL still contains transforms! ${staticUrl}`);
+    throw new Error(`Eager URL contains transforms - not a static asset URL`);
   }
   
   console.log(`[FB-CLOUDINARY] Dimensions: ${eagerData.width}x${eagerData.height}`);

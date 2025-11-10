@@ -66,7 +66,6 @@ function buildCaption() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// 🔧 FIX #2: Enhanced probe with detailed logging
 async function probeImage(url, attemptNum = 1) {
   console.log(`[PROBE #${attemptNum}] Testing: ${url}`);
   try {
@@ -94,10 +93,9 @@ async function probeImage(url, attemptNum = 1) {
   }
 }
 
-// 🔧 FIX #2: Better retry with exponential backoff
 async function probeWithRetry(url, maxRetries = 5) {
   for (let i = 1; i <= maxRetries; i++) {
-    const delay = i === 1 ? 0 : 1000 * Math.pow(1.5, i - 2); // 0, 1s, 1.5s, 2.25s, 3.38s
+    const delay = i === 1 ? 0 : 1000 * Math.pow(1.5, i - 2);
     if (delay > 0) {
       console.log(`[RETRY] Waiting ${delay}ms before attempt ${i}...`);
       await sleep(delay);
@@ -127,6 +125,7 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
 
   const H1 = String(title || "").toUpperCase().replace(/\n/g, " ");
   const SUB = String(sub || "").toUpperCase().replace(/\n/g, " ");
+
   // Instagram: 1080x1080 square with darkened overlay + white text
   const eager =
     `c_fill,w_1080,h_1080,ar_1:1,g_auto,q_auto:good,f_jpg` +
@@ -136,14 +135,13 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
 
   console.log(`[CLOUDINARY] Transform: ${eager.substring(0, 100)}...`);
 
-  // 🔧 FIX: Include async in signature (alphabetical order)
   const toSign =
-  `async=false` +           // 🔧 ADD THIS
-  `&eager=${eager}` +
-  `&folder=${folder}` +
-  `&format=${format}` +
-  `&timestamp=${timestamp}` +
-  `${CLOUDINARY_API_SECRET}`;
+    `async=false` +
+    `&eager=${eager}` +
+    `&folder=${folder}` +
+    `&format=${format}` +
+    `&timestamp=${timestamp}` +
+    `${CLOUDINARY_API_SECRET}`;
   const signature = crypto.createHash("sha1").update(toSign).digest("hex");
 
   const form = new URLSearchParams({
@@ -181,29 +179,28 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
   const eagerData = json.eager[0];
   console.log(`[CLOUDINARY] Eager data:`, JSON.stringify(eagerData, null, 2));
   
-  // Extract public_id from eager response and build clean static URL
+  // Build clean static URL - the eager transformation creates a NEW derived asset
   let staticUrl;
   
-  if (eagerData.public_id) {
-    // Build a clean URL with no transforms using the derived asset's public_id
-    staticUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${eagerData.public_id}.jpg`;
-    console.log(`[CLOUDINARY] ✅ Built static URL from eager public_id: ${staticUrl}`);
-  } else if (eagerData.secure_url && !eagerData.secure_url.includes('/upload/ar_')) {
-    // If secure_url doesn't contain transforms, use it directly
+  // Use eager's secure_url if it exists - this should be the clean static URL
+  if (eagerData.secure_url) {
     staticUrl = eagerData.secure_url;
-    console.log(`[CLOUDINARY] ✅ Using secure_url (no transforms): ${staticUrl}`);
+    console.log(`[CLOUDINARY] ✅ Using eager secure_url: ${staticUrl}`);
+  } else if (json.public_id) {
+    // Fallback: construct from public_id
+    staticUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${json.public_id}.jpg`;
+    console.log(`[CLOUDINARY] ⚠️ Constructed from public_id: ${staticUrl}`);
   } else {
-    // Fallback: Use original public_id and construct URL
-    const basePublicId = json.public_id;
-    if (basePublicId) {
-      staticUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${basePublicId}.jpg`;
-      console.warn(`[CLOUDINARY] ⚠️ Using base public_id as fallback: ${staticUrl}`);
-    } else {
-      throw new Error(`Cannot construct static URL. Eager response: ${JSON.stringify(eagerData)}`);
-    }
+    throw new Error(`Cannot extract static URL from Cloudinary response: ${JSON.stringify(json)}`);
   }
   
-  console.log(`[CLOUDINARY] Width: ${eagerData.width}, Height: ${eagerData.height}`);
+  // Verify it's truly static (no transform markers in URL)
+  if (staticUrl.includes('/c_fill,') || staticUrl.includes('/e_brightness')) {
+    console.error(`[CLOUDINARY] ❌ URL still contains transforms! ${staticUrl}`);
+    throw new Error(`Eager URL contains transforms - not a static asset URL`);
+  }
+  
+  console.log(`[CLOUDINARY] Dimensions: ${eagerData.width}x${eagerData.height}`);
   
   return staticUrl;
 }
@@ -240,7 +237,6 @@ async function getInstagramUserId({ pageId, pageToken }) {
 }
 
 async function createMediaContainer({ igUserId, pageToken, mediaUrl, caption, isVideo }) {
-  // 🔧 FIX #1: Log the actual URL being sent to Instagram
   console.log(`[INSTAGRAM] Creating container with URL: ${mediaUrl}`);
   console.log(`[INSTAGRAM] Caption length: ${caption?.length || 0} chars`);
   console.log(`[INSTAGRAM] Media type: ${isVideo ? 'VIDEO' : 'IMAGE'}`);
@@ -327,57 +323,46 @@ async function main() {
 
   const caption = buildCaption();
 
-  // Build final media URL:
+  // Build final media URL
   let finalMediaUrl;
   if (IS_VIDEO) {
     finalMediaUrl = MEDIA_URL;
     console.log(`[VIDEO] Using original URL: ${finalMediaUrl}`);
   } else {
     const title = SOCIAL_TITLE || POST_TITLE || (caption || "").split("\n")[0] || "";
-    
-    // 🔧 FIX #3: Validate MEDIA_URL before processing
-    console.log(`\n[VALIDATION] Checking original MEDIA_URL accessibility...`);
-    const originalValid = await probeImage(MEDIA_URL, 0);
-    if (!originalValid) {
-      console.warn(`[VALIDATION] ⚠️  Original MEDIA_URL failed probe - continuing anyway`);
-    }
-    
-    const eagerUrl = await uploadToCloudinaryWithEager(MEDIA_URL, {
-      title,
-      sub: "Swipe for a sneak peek",
-    });
+    const sub = "Swipe for a sneak peek";
 
-    // 🔧 FIX #2: Better retry logic with exponential backoff
-    console.log(`\n[VALIDATION] Probing eager URL with retry...`);
+    // Upload to Cloudinary with eager transformation (creates static overlayed JPG)
+    const eagerUrl = await uploadToCloudinaryWithEager(MEDIA_URL, { title, sub });
+
+    // Probe with retry to ensure the image is accessible
+    console.log(`\n[VALIDATION] Probing eager URL...`);
     const ok = await probeWithRetry(eagerUrl, 5);
     
     if (ok) {
       finalMediaUrl = eagerUrl;
-      console.log(`[FINAL] ✅ Using Cloudinary eager URL: ${finalMediaUrl}`);
+      console.log(`[FINAL] ✅ Using Cloudinary eager URL`);
     } else {
-      console.warn(`[FINAL] ⚠️  Eager URL probe failed, falling back to original MEDIA_URL`);
-      // 🔧 FIX #3: Verify fallback is valid
+      console.warn(`[FINAL] ⚠️ Eager URL probe failed, trying original`);
+      const originalValid = await probeImage(MEDIA_URL, 0);
       if (!originalValid) {
-        throw new Error(`Both eager URL and original MEDIA_URL failed validation. Cannot proceed.`);
+        throw new Error(`Both eager URL and original MEDIA_URL failed validation`);
       }
       finalMediaUrl = MEDIA_URL;
-      console.log(`[FINAL] Using fallback: ${finalMediaUrl}`);
     }
-  }
 
-  // 🔧 FIX #1: Final validation before Instagram
-  console.log(`\n[PRE-PUBLISH] Final URL validation...`);
-  console.log(`[PRE-PUBLISH] URL: ${finalMediaUrl}`);
-  if (!IS_VIDEO) {
+    // Final validation before sending to Instagram
+    console.log(`\n[PRE-PUBLISH] Final validation...`);
     const finalCheck = await probeImage(finalMediaUrl, 99);
     if (!finalCheck) {
       throw new Error(`Final media URL failed validation: ${finalMediaUrl}`);
     }
-    console.log(`[PRE-PUBLISH] ✅ Final URL validated successfully`);
+    console.log(`[PRE-PUBLISH] ✅ Validated`);
   }
 
   console.log(`\n[INSTAGRAM] Authenticating...`);
   const pageToken = await getPageToken();
+  
   const igUserId = await getInstagramUserId({ pageId: PAGE_ID, pageToken });
   console.log(`[INSTAGRAM] IG User ID: ${igUserId}`);
 
@@ -389,11 +374,7 @@ async function main() {
     isVideo: IS_VIDEO,
   });
 
-  const mediaId = await publishMedia({
-    igUserId,
-    pageToken,
-    creationId,
-  });
+  const mediaId = await publishMedia({ igUserId, pageToken, creationId });
 
   console.log(`\n========== ✅ SUCCESS ==========`);
   console.log(JSON.stringify({ ok: true, igMediaId: mediaId, finalUrl: finalMediaUrl }, null, 2));
