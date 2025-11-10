@@ -76,7 +76,7 @@ export async function renderSocialImage(baseUrl, opts = {}) {
   const width = opts.width ?? 1080;
   const height = opts.height ?? 1350; // 4:5 for IG
   const title = opts.title ?? "";
-  const sub = opts.sub ?? "SWIPE FOR A SNEAK PEEK";
+  const sub = opts.sub ?? "DISCOVER MORE ON OUR BLOG →";
 
   const res = await fetch(baseUrl);
   if (!res.ok) throw new Error(`Failed to download base image: ${res.status}`);
