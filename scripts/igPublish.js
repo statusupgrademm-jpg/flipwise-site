@@ -114,13 +114,6 @@ async function probeWithRetry(url, maxRetries = 5) {
   return false;
 }
 
-/* ---------- cloudinary eager upload (signed) ---------- */
-
-/**
- * Upload the ORIGINAL image to Cloudinary with a signed eager transformation
- * that produces a stored, static JPG (square 1080x1080) with dark overlay + white title/sub.
- * Returns the eager[0].secure_url.
- */
 async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
   requireEnv("CLOUDINARY_CLOUD_NAME", CLOUDINARY_CLOUD_NAME);
   requireEnv("CLOUDINARY_API_KEY", CLOUDINARY_API_KEY);
@@ -129,7 +122,7 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
   console.log(`[CLOUDINARY] Uploading original: ${baseImageUrl}`);
 
   const folder = "social_overlayed";
-  const format = "jpg"; // force real JPG file + .jpg extension
+  const format = "jpg";
   const timestamp = Math.floor(Date.now() / 1000);
 
   const H1 = String(title || "").toUpperCase().replace(/\n/g, " ");
@@ -144,7 +137,7 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
 
   console.log(`[CLOUDINARY] Transform: ${eager.substring(0, 100)}...`);
 
-  // SIGNATURE — include eager, folder, format, timestamp (alphabetical by key)
+  // SIGNATURE
   const toSign =
     `eager=${eager}` +
     `&folder=${folder}` +
@@ -161,6 +154,7 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
     eager,
     format,
     signature,
+    async: "false", // 🔧 FIX: Force synchronous processing
   });
 
   const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
@@ -171,23 +165,50 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
 
   const json = await res.json();
   
-  // 🔧 FIX #4: Log Cloudinary response
   console.log(`[CLOUDINARY] Response status: ${res.status}`);
+  console.log(`[CLOUDINARY] Full response:`, JSON.stringify(json, null, 2)); // 🔧 DEBUG: See full response
+  
   if (!res.ok) {
     console.error(`[CLOUDINARY] ❌ Upload failed: ${JSON.stringify(json, null, 2)}`);
     throw new Error(`Cloudinary upload failed: ${res.status} ${JSON.stringify(json)}`);
   }
   
-  if (!Array.isArray(json.eager) || !json.eager[0]?.secure_url) {
-    console.error(`[CLOUDINARY] ❌ No eager URL in response: ${JSON.stringify(json, null, 2)}`);
+  if (!Array.isArray(json.eager) || !json.eager[0]) {
+    console.error(`[CLOUDINARY] ❌ No eager data in response: ${JSON.stringify(json, null, 2)}`);
     throw new Error(`Cloudinary eager transform failed: ${JSON.stringify(json)}`);
   }
 
-  const eagerUrl = json.eager[0].secure_url;
-  console.log(`[CLOUDINARY] ✅ Eager URL: ${eagerUrl}`);
-  console.log(`[CLOUDINARY] Eager width: ${json.eager[0].width}, height: ${json.eager[0].height}`);
+  const eagerData = json.eager[0];
+  console.log(`[CLOUDINARY] Eager data:`, JSON.stringify(eagerData, null, 2));
   
-  return eagerUrl;
+  // 🔧 FIX: Extract public_id from eager response and build clean static URL
+  // The eager response should have a public_id for the derived asset
+  let staticUrl;
+  
+  if (eagerData.public_id) {
+    // Build a clean URL with no transforms using the derived asset's public_id
+    staticUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${eagerData.public_id}.jpg`;
+    console.log(`[CLOUDINARY] ✅ Built static URL from public_id: ${staticUrl}`);
+  } else if (eagerData.secure_url && !eagerData.secure_url.includes('/upload/ar_')) {
+    // If secure_url doesn't contain transforms, use it directly
+    staticUrl = eagerData.secure_url;
+    console.log(`[CLOUDINARY] ✅ Using secure_url (no transforms): ${staticUrl}`);
+  } else {
+    // Fallback: Try to extract the base public_id and construct URL
+    const basePublicId = json.public_id; // Original upload public_id
+    if (basePublicId) {
+      // Cloudinary derives eager assets with a different public_id, but if not available,
+      // we'll use the original with no transforms
+      staticUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${basePublicId}.jpg`;
+      console.warn(`[CLOUDINARY] ⚠️ Using base public_id as fallback: ${staticUrl}`);
+    } else {
+      throw new Error(`Cannot construct static URL. Eager response: ${JSON.stringify(eagerData)}`);
+    }
+  }
+  
+  console.log(`[CLOUDINARY] Width: ${eagerData.width}, Height: ${eagerData.height}`);
+  
+  return staticUrl;
 }
 
 /* ---------- facebook/instagram graph helpers ---------- */
