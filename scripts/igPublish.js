@@ -77,11 +77,13 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
   const H1 = String(title || "").toUpperCase().replace(/\n/g, " ");
   const SUB = String(sub || "").toUpperCase().replace(/\n/g, " ");
 
-  const eager =
-    `c_fill,w_1080,h_1350,q_auto,f_jpg` +
+    const eager =
+    // enforce exact 4:5 portrait and final pixel size IG accepts
+    `ar_4:5,c_fill,g_auto,w_1080,h_1350,q_auto,f_jpg` +
     `/e_colorize:70,co_rgb:000000` +
     `/l_text:Montserrat_90_bold:${encodeURIComponent(H1)},co_rgb:ffffff,g_center,y_-80` +
     `/l_text:Montserrat_32_bold:${encodeURIComponent(SUB)},co_rgb:ffffff,g_center,y_480`;
+
 
   // Sign parameters alphabetically by key: eager, folder, timestamp
   const toSign = `eager=${eager}&folder=${folder}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
