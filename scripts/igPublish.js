@@ -4,37 +4,40 @@ import { buildSocialImageUrl } from "./socialImage.js";
 
 /**
  * Instagram publishing via Page token (no IG_ACCESS_TOKEN required).
+ * Fixes IG 9004 error by pre-generating a static JPG in Cloudinary before posting.
  *
  * Required env:
- *   PAGE_ID               Facebook Page ID that's connected to the IG account
- *   FB_LONG_USER_TOKEN    Long-lived FB USER access token (with perms)
+ *   PAGE_ID                 Facebook Page ID connected to IG account
+ *   FB_LONG_USER_TOKEN      Long-lived FB USER token
+ *   CLOUDINARY_CLOUD_NAME   Cloudinary cloud name (e.g., "flipwise")
+ *   CLOUDINARY_API_KEY      Cloudinary API key
+ *   CLOUDINARY_API_SECRET   Cloudinary API secret
  *
- * Content env (same as before):
- *   MEDIA_URL             Image/video URL to post
- *   POST_TITLE            Title (also used for overlay heading)
- *   POST_EXCERPT          Optional extra text for caption
- *   POST_URL              Optional link (will be plain text in caption)
- *   POST_TAGS             Optional CSV or space-separated tags
- *   IS_VIDEO              "true" to treat as video, else image
- *   SOCIAL_TITLE          Optional explicit overlay heading
- *
- * Notes:
- * - We fetch IG_USER_ID from the Page using the Page token:
- *   GET /{PAGE_ID}?fields=connected_instagram_account
- * - We then call /{ig_user_id}/media and /media_publish using the Page token.
+ * Content env:
+ *   MEDIA_URL               Base image/video URL
+ *   POST_TITLE              Title (also used for overlay heading)
+ *   POST_EXCERPT            Optional text
+ *   POST_URL                Optional link (plain text in caption)
+ *   POST_TAGS               CSV or space-separated tags
+ *   IS_VIDEO                "true" to treat as video, else image
+ *   SOCIAL_TITLE            Optional explicit overlay heading (overrides POST_TITLE)
  */
 
 const PAGE_ID = process.env.PAGE_ID;
-const USER_LONG_TOKEN = process.env.FB_LONG_USER_TOKEN; // long-lived USER token
+const USER_LONG_TOKEN = process.env.FB_LONG_USER_TOKEN;
 
 const MEDIA_URL = process.env.MEDIA_URL || "";
 const POST_TITLE = process.env.POST_TITLE || "";
 const POST_EXCERPT = process.env.POST_EXCERPT || "";
 const POST_URL = process.env.POST_URL || "";
 const POST_TAGS = process.env.POST_TAGS || "";
-const IS_VIDEO =
-  String(process.env.IS_VIDEO || "false").toLowerCase() === "true";
+const IS_VIDEO = String(process.env.IS_VIDEO || "false").toLowerCase() === "true";
 const SOCIAL_TITLE = process.env.SOCIAL_TITLE || "";
+
+// Cloudinary creds (needed to upload the final static image)
+const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || "";
+const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY || "";
+const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || "";
 
 function requireEnv(name, val) {
   if (!val) throw new Error(`Missing env: ${name}`);
@@ -55,7 +58,7 @@ function buildCaption() {
   const chunks = [POST_TITLE, POST_EXCERPT, hashtags, POST_URL]
     .map((c) => (c || "").trim())
     .filter(Boolean);
-  return chunks.join("\n\n").trim().slice(0, 2200); // IG caption limit
+  return chunks.join("\n\n").trim().slice(0, 2200);
 }
 
 function safeBuildSocial(baseImageUrl, caption) {
@@ -69,8 +72,37 @@ function safeBuildSocial(baseImageUrl, caption) {
   }
 }
 
+// Pre-generate a **static** JPG in Cloudinary by uploading the transformed URL.
+// Returns a direct .jpg URL that IG accepts.
+async function uploadToCloudinary(finalUrl) {
+  requireEnv("CLOUDINARY_CLOUD_NAME", CLOUDINARY_CLOUD_NAME);
+  requireEnv("CLOUDINARY_API_KEY", CLOUDINARY_API_KEY);
+  requireEnv("CLOUDINARY_API_SECRET", CLOUDINARY_API_SECRET);
+
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
+    method: "POST",
+    headers: {
+      Authorization:
+        "Basic " + Buffer.from(`${CLOUDINARY_API_KEY}:${CLOUDINARY_API_SECRET}`).toString("base64"),
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      file: finalUrl,              // Cloudinary fetches & stores the rendered image
+      folder: "social_overlayed",  // keep outputs organized
+      overwrite: "true",
+      // public_id: optional custom name if you want deterministic URLs
+      // format: "jpg" // not needed; the rendered URL is already JPG
+    }),
+  });
+
+  const json = await res.json();
+  if (!res.ok || !json.secure_url) {
+    throw new Error(`Cloudinary upload failed: ${res.status} ${JSON.stringify(json)}`);
+  }
+  return json.secure_url; // direct static JPG
+}
+
 async function getPageToken() {
-  // Long-lived USER token -> list Pages -> find ours -> return Page token
   const r = await fetch(
     `https://graph.facebook.com/v24.0/me/accounts?access_token=${USER_LONG_TOKEN}`
   );
@@ -135,12 +167,20 @@ async function publishMedia({ igUserId, pageToken, creationId }) {
 async function main() {
   requireEnv("PAGE_ID", PAGE_ID);
   requireEnv("FB_LONG_USER_TOKEN", USER_LONG_TOKEN);
-  if (!MEDIA_URL) throw new Error("Missing env: MEDIA_URL");
+  requireEnv("MEDIA_URL", MEDIA_URL);
 
   const caption = buildCaption();
 
-  // For images, apply overlay; for videos, pass through
-  const finalMediaUrl = IS_VIDEO ? MEDIA_URL : safeBuildSocial(MEDIA_URL, caption);
+  // Build final media URL:
+  // - Video: pass original URL
+  // - Image: apply overlay → upload to Cloudinary to get a static JPG URL IG accepts
+  let finalMediaUrl;
+  if (IS_VIDEO) {
+    finalMediaUrl = MEDIA_URL;
+  } else {
+    const overlayUrl = safeBuildSocial(MEDIA_URL, caption); // Cloudinary transform URL
+    finalMediaUrl = await uploadToCloudinary(overlayUrl);   // stored, static .jpg URL
+  }
 
   const pageToken = await getPageToken();
   const igUserId = await getInstagramUserId({ pageId: PAGE_ID, pageToken });
