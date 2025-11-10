@@ -66,16 +66,52 @@ function buildCaption() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function probeImage(url) {
+// 🔧 FIX #2: Enhanced probe with detailed logging
+async function probeImage(url, attemptNum = 1) {
+  console.log(`[PROBE #${attemptNum}] Testing: ${url}`);
   try {
-    const r = await fetch(url, { method: "HEAD" });
-    if (!r.ok) return false;
+    const r = await fetch(url, { method: "HEAD", timeout: 10000 });
+    console.log(`[PROBE #${attemptNum}] Status: ${r.status}`);
+    
+    if (!r.ok) {
+      console.error(`[PROBE #${attemptNum}] ❌ Failed: HTTP ${r.status}`);
+      return false;
+    }
+    
     const ct = (r.headers.get("content-type") || "").toLowerCase();
     const len = parseInt(r.headers.get("content-length") || "0", 10);
-    return ct.includes("image/") && len > 10000; // >10KB sanity
-  } catch {
+    
+    console.log(`[PROBE #${attemptNum}] Content-Type: ${ct}`);
+    console.log(`[PROBE #${attemptNum}] Content-Length: ${len} bytes`);
+    
+    const isValid = ct.includes("image/") && len > 10000;
+    console.log(`[PROBE #${attemptNum}] ${isValid ? '✅ Valid' : '❌ Invalid'} (needs image/* type & >10KB)`);
+    
+    return isValid;
+  } catch (err) {
+    console.error(`[PROBE #${attemptNum}] ❌ Exception: ${err.message}`);
     return false;
   }
+}
+
+// 🔧 FIX #2: Better retry with exponential backoff
+async function probeWithRetry(url, maxRetries = 5) {
+  for (let i = 1; i <= maxRetries; i++) {
+    const delay = i === 1 ? 0 : 1000 * Math.pow(1.5, i - 2); // 0, 1s, 1.5s, 2.25s, 3.38s
+    if (delay > 0) {
+      console.log(`[RETRY] Waiting ${delay}ms before attempt ${i}...`);
+      await sleep(delay);
+    }
+    
+    const ok = await probeImage(url, i);
+    if (ok) {
+      console.log(`[RETRY] ✅ Success on attempt ${i}/${maxRetries}`);
+      return true;
+    }
+  }
+  
+  console.error(`[RETRY] ❌ All ${maxRetries} attempts failed`);
+  return false;
 }
 
 /* ---------- cloudinary eager upload (signed) ---------- */
@@ -89,6 +125,8 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
   requireEnv("CLOUDINARY_CLOUD_NAME", CLOUDINARY_CLOUD_NAME);
   requireEnv("CLOUDINARY_API_KEY", CLOUDINARY_API_KEY);
   requireEnv("CLOUDINARY_API_SECRET", CLOUDINARY_API_SECRET);
+
+  console.log(`[CLOUDINARY] Uploading original: ${baseImageUrl}`);
 
   const folder = "social_overlayed";
   const format = "jpg"; // force real JPG file + .jpg extension
@@ -104,8 +142,9 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
     `/l_text:Montserrat_90_bold:${encodeURIComponent(H1)},co_rgb:ffffff,g_center,y_-60` +
     `/l_text:Montserrat_32_bold:${encodeURIComponent(SUB)},co_rgb:ffffff,g_center,y_360`;
 
+  console.log(`[CLOUDINARY] Transform: ${eager.substring(0, 100)}...`);
+
   // SIGNATURE — include eager, folder, format, timestamp (alphabetical by key)
-  // signature = sha1("eager=<...>&folder=<...>&format=jpg&timestamp=<...><api_secret>")
   const toSign =
     `eager=${eager}` +
     `&folder=${folder}` +
@@ -115,12 +154,12 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
   const signature = crypto.createHash("sha1").update(toSign).digest("hex");
 
   const form = new URLSearchParams({
-    file: baseImageUrl, // ORIGINAL image URL (no transforms)
+    file: baseImageUrl,
     api_key: CLOUDINARY_API_KEY,
     timestamp: String(timestamp),
     folder,
-    eager,             // derive asset with overlay/text
-    format,            // ensure stored as JPG with .jpg extension
+    eager,
+    format,
     signature,
   });
 
@@ -131,11 +170,24 @@ async function uploadToCloudinaryWithEager(baseImageUrl, { title, sub }) {
   });
 
   const json = await res.json();
-  if (!res.ok || !Array.isArray(json.eager) || !json.eager[0]?.secure_url) {
+  
+  // 🔧 FIX #4: Log Cloudinary response
+  console.log(`[CLOUDINARY] Response status: ${res.status}`);
+  if (!res.ok) {
+    console.error(`[CLOUDINARY] ❌ Upload failed: ${JSON.stringify(json, null, 2)}`);
     throw new Error(`Cloudinary upload failed: ${res.status} ${JSON.stringify(json)}`);
   }
+  
+  if (!Array.isArray(json.eager) || !json.eager[0]?.secure_url) {
+    console.error(`[CLOUDINARY] ❌ No eager URL in response: ${JSON.stringify(json, null, 2)}`);
+    throw new Error(`Cloudinary eager transform failed: ${JSON.stringify(json)}`);
+  }
 
-  return json.eager[0].secure_url; // static JPG with .jpg extension
+  const eagerUrl = json.eager[0].secure_url;
+  console.log(`[CLOUDINARY] ✅ Eager URL: ${eagerUrl}`);
+  console.log(`[CLOUDINARY] Eager width: ${json.eager[0].width}, height: ${json.eager[0].height}`);
+  
+  return eagerUrl;
 }
 
 /* ---------- facebook/instagram graph helpers ---------- */
@@ -170,6 +222,11 @@ async function getInstagramUserId({ pageId, pageToken }) {
 }
 
 async function createMediaContainer({ igUserId, pageToken, mediaUrl, caption, isVideo }) {
+  // 🔧 FIX #1: Log the actual URL being sent to Instagram
+  console.log(`[INSTAGRAM] Creating container with URL: ${mediaUrl}`);
+  console.log(`[INSTAGRAM] Caption length: ${caption?.length || 0} chars`);
+  console.log(`[INSTAGRAM] Media type: ${isVideo ? 'VIDEO' : 'IMAGE'}`);
+  
   const endpoint = `https://graph.facebook.com/v24.0/${igUserId}/media`;
   const params = new URLSearchParams({
     access_token: pageToken,
@@ -183,12 +240,15 @@ async function createMediaContainer({ igUserId, pageToken, mediaUrl, caption, is
   const r = await fetch(endpoint, { method: "POST", body: params });
   const j = await r.json();
   if (!r.ok || !j.id) {
+    console.error(`[INSTAGRAM] ❌ Container creation failed: ${JSON.stringify(j, null, 2)}`);
     throw new Error(`IG create container failed: ${r.status} ${JSON.stringify(j)}`);
   }
+  console.log(`[INSTAGRAM] ✅ Container created: ${j.id}`);
   return j.id;
 }
 
 async function publishMedia({ igUserId, pageToken, creationId }) {
+  console.log(`[INSTAGRAM] Publishing container: ${creationId}`);
   const endpoint = `https://graph.facebook.com/v24.0/${igUserId}/media_publish`;
   const params = new URLSearchParams({
     access_token: pageToken,
@@ -197,8 +257,10 @@ async function publishMedia({ igUserId, pageToken, creationId }) {
   const r = await fetch(endpoint, { method: "POST", body: params });
   const j = await r.json();
   if (!r.ok || !j.id) {
+    console.error(`[INSTAGRAM] ❌ Publish failed: ${JSON.stringify(j, null, 2)}`);
     throw new Error(`IG media_publish failed: ${r.status} ${JSON.stringify(j)}`);
   }
+  console.log(`[INSTAGRAM] ✅ Published: ${j.id}`);
   return j.id;
 }
 
@@ -209,33 +271,65 @@ async function main() {
   requireEnv("FB_LONG_USER_TOKEN", USER_LONG_TOKEN);
   requireEnv("MEDIA_URL", MEDIA_URL);
 
+  console.log(`\n========== INSTAGRAM PUBLISH START ==========`);
+  console.log(`Original MEDIA_URL: ${MEDIA_URL}`);
+  console.log(`IS_VIDEO: ${IS_VIDEO}`);
+
   const caption = buildCaption();
 
   // Build final media URL:
-  // - Video: pass original URL
-  // - Image: eager-upload ORIGINAL → static JPG URL (probe with retry; fallback to original if needed)
   let finalMediaUrl;
   if (IS_VIDEO) {
     finalMediaUrl = MEDIA_URL;
+    console.log(`[VIDEO] Using original URL: ${finalMediaUrl}`);
   } else {
     const title = SOCIAL_TITLE || POST_TITLE || (caption || "").split("\n")[0] || "";
+    
+    // 🔧 FIX #3: Validate MEDIA_URL before processing
+    console.log(`\n[VALIDATION] Checking original MEDIA_URL accessibility...`);
+    const originalValid = await probeImage(MEDIA_URL, 0);
+    if (!originalValid) {
+      console.warn(`[VALIDATION] ⚠️  Original MEDIA_URL failed probe - continuing anyway`);
+    }
+    
     const eagerUrl = await uploadToCloudinaryWithEager(MEDIA_URL, {
       title,
       sub: "Swipe for a sneak peek",
     });
 
-    // brief wait + probe (CDN propagation)
-    await sleep(1500);
-    let ok = await probeImage(eagerUrl);
-    if (!ok) {
-      await sleep(2500);
-      ok = await probeImage(eagerUrl);
+    // 🔧 FIX #2: Better retry logic with exponential backoff
+    console.log(`\n[VALIDATION] Probing eager URL with retry...`);
+    const ok = await probeWithRetry(eagerUrl, 5);
+    
+    if (ok) {
+      finalMediaUrl = eagerUrl;
+      console.log(`[FINAL] ✅ Using Cloudinary eager URL: ${finalMediaUrl}`);
+    } else {
+      console.warn(`[FINAL] ⚠️  Eager URL probe failed, falling back to original MEDIA_URL`);
+      // 🔧 FIX #3: Verify fallback is valid
+      if (!originalValid) {
+        throw new Error(`Both eager URL and original MEDIA_URL failed validation. Cannot proceed.`);
+      }
+      finalMediaUrl = MEDIA_URL;
+      console.log(`[FINAL] Using fallback: ${finalMediaUrl}`);
     }
-    finalMediaUrl = ok ? eagerUrl : MEDIA_URL;
   }
 
+  // 🔧 FIX #1: Final validation before Instagram
+  console.log(`\n[PRE-PUBLISH] Final URL validation...`);
+  console.log(`[PRE-PUBLISH] URL: ${finalMediaUrl}`);
+  if (!IS_VIDEO) {
+    const finalCheck = await probeImage(finalMediaUrl, 99);
+    if (!finalCheck) {
+      throw new Error(`Final media URL failed validation: ${finalMediaUrl}`);
+    }
+    console.log(`[PRE-PUBLISH] ✅ Final URL validated successfully`);
+  }
+
+  console.log(`\n[INSTAGRAM] Authenticating...`);
   const pageToken = await getPageToken();
   const igUserId = await getInstagramUserId({ pageId: PAGE_ID, pageToken });
+  console.log(`[INSTAGRAM] IG User ID: ${igUserId}`);
 
   const creationId = await createMediaContainer({
     igUserId,
@@ -251,10 +345,12 @@ async function main() {
     creationId,
   });
 
-  console.log(JSON.stringify({ ok: true, igMediaId: mediaId }, null, 2));
+  console.log(`\n========== ✅ SUCCESS ==========`);
+  console.log(JSON.stringify({ ok: true, igMediaId: mediaId, finalUrl: finalMediaUrl }, null, 2));
 }
 
 main().catch((err) => {
+  console.error(`\n========== ❌ FATAL ERROR ==========`);
   console.error(err);
   process.exit(1);
 });
