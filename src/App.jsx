@@ -468,17 +468,50 @@ function BlogPost({ post, calendlyUrl, navigate }) {
     );
   }
 
+  // --- helpers to make Back smart ---
+  const getHashPage = () => {
+    try {
+      const h = typeof window !== 'undefined' ? window.location.hash : '';
+      const qs = h.split('?')[1];
+      if (!qs) return null;
+      const v = new URLSearchParams(qs).get('page');
+      return v ? String(v) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const cameFromBlogList = () => {
+    try {
+      const ref = document.referrer || '';
+      if (!ref.startsWith(window.location.origin)) return false;
+      const refHash = new URL(ref).hash || '';
+      return /^#\/blog(\?|\/|$)/.test(refHash);
+    } catch {
+      return false;
+    }
+  };
+
+  const backToBlog = () => {
+    const page = getHashPage();
+    if (cameFromBlogList()) {
+      window.history.back();
+    } else {
+      const target = page ? `#/blog?page=${page}` : '#/blog';
+      if (typeof navigate === 'function') navigate(target);
+    }
+  };
+
   return (
     <article className="py-12 bg-background">
       <div className="max-w-3xl mx-auto px-6">
         <button
           type="button"
-          onClick={() => typeof navigate === 'function' ? navigate(`#/blog?page=${(typeof window !== 'undefined' && window.location.hash.includes('page=')) ? new URLSearchParams(window.location.hash.split('?')[1]).get('page') : (route?.page || 1)}`) : null}
+          onClick={backToBlog}
           className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:pointer-events-none hover-elevate active-elevate-2 h-9 px-4 py-2 mb-6"
         >
           ← Back to Blog
         </button>
-
 
         <div className="mb-8">
           <h1 className="text-4xl md:text-5xl font-bold mb-6">{p.title}</h1>
@@ -498,26 +531,31 @@ function BlogPost({ post, calendlyUrl, navigate }) {
           </div>
         )}
 
-
         <div className="prose prose-lg max-w-none">
           {p.content.length > 0 ? (
-            p.content.map((block, i) => (
+            p.content.map((block, i) =>
               block.type === 'subheader' ? (
-                <h2 key={i} className={`text-2xl ${block.text === 'Checklist' ? 'font-normal mt-2' : 'font-semibold mt-8'} mb-4`}>
+                <h2
+                  key={i}
+                  className={`text-2xl ${block.text === 'Checklist' ? 'font-normal mt-2' : 'font-semibold mt-8'} mb-4`}
+                >
                   {block.text}
                 </h2>
               ) : block.type === 'list' ? (
                 <ul key={i} className="list-disc pl-8 mb-6 space-y-2">
-                  {Array.isArray(block.items) && block.items.map((it, j) => (
-                    <li key={j} className="leading-relaxed text-muted-foreground">{it}</li>
-                  ))}
+                  {Array.isArray(block.items) &&
+                    block.items.map((it, j) => (
+                      <li key={j} className="leading-relaxed text-muted-foreground">
+                        {it}
+                      </li>
+                    ))}
                 </ul>
               ) : (
                 <p key={i} className="leading-relaxed mb-4">
                   {block.text}
                 </p>
               )
-            ))
+            )
           ) : (
             <p className="leading-relaxed">No content available.</p>
           )}
@@ -537,7 +575,7 @@ function BlogPost({ post, calendlyUrl, navigate }) {
         <div className="mt-8">
           <button
             type="button"
-            onClick={() => typeof navigate === 'function' ? navigate('#/blog') : null}
+            onClick={() => (typeof navigate === 'function' ? navigate('#/blog') : null)}
             className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none border border-input hover-elevate active-elevate-2 h-9 px-4 py-2"
           >
             View More Articles
@@ -547,6 +585,7 @@ function BlogPost({ post, calendlyUrl, navigate }) {
     </article>
   );
 }
+
 
 function usePosts() {
   const [posts, setPosts] = useState([]);
