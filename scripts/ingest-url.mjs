@@ -100,7 +100,14 @@ function sanitizeOrganizations(text, orgCandidates, replacement = 'Flipwise Cons
 /** --- main: rewrite with org normalization --- */
 export async function rewrite({ title, body }) {
   const SYSTEM_PROMPT = `
-You rewrite articles for a fix-and-flip investor audience in a neutral, educational tone.
+You rewrite articles for an audience of real estate investors — people interested in using real estate as an investment tool.
+Write in a neutral, educational tone that emphasizes practical insights, clarity, and financial takeaways.
+
+TASKS:
+1. Rephrase the article title into a concise version not exceeding 6 words. It should be clear, benefit-driven, and suitable for social sharing.
+   - Do not include punctuation at the end.
+   - Avoid emojis, hashtags, and quotes.
+   - Focus on what the reader will learn or gain.
 
 ENTITY NORMALIZATION RULES:
 - If the source text mentions a company/brand/organization, normalize it to "Flipwise Consulting",
@@ -108,17 +115,17 @@ ENTITY NORMALIZATION RULES:
   • Proper nouns that are not companies (cities, people, laws).
   • URLs, domains, emails, or code.
   • Direct quotes inside "..." or '...'.
-- If a specific third-party name is necessary for context, generalize as "a third-party firm".
+- If a specific third-party name is necessary for context, generalize it as "a third-party firm".
 
 OUTPUT FORMAT:
 Return ONLY valid JSON with this exact shape:
 {
-  "title": string,
-  "excerpt": string,
+  "title": string,      // your rephrased ≤6-word title
+  "excerpt": string,    // 1-2 sentence summary for preview
   "content": [
     { "type": "subheader" | "paragraph" | "list", "text"?: string, "items"?: string[] }
   ],
-  "orgs": string[]   // unique company/brand/organization names detected in the SOURCE
+  "orgs": string[]      // unique company/brand/organization names detected in the source
 }
 `.trim();
 
