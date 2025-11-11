@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Clock, Mail, Phone, CheckCircle2, Facebook, Twitter, Linkedin, Instagram, Menu, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { Clock, Mail, Phone, CheckCircle2, Menu, X, } from "lucide-react";
 
 /***************************
  * Utilities (defensive)
@@ -1048,11 +1048,18 @@ export default function App() {
             </p>
 
             <div className="flex gap-6">
-              <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-social-linkedin">
+              <a href="https://www.linkedin.com/company/flipwiseconsulting" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-social-linkedin">
                 LinkedIn
               </a>
-              <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-social-instagram">
+              <a href="https://www.instagram.com/flipwiseconsultancy/" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-social-instagram">
                 Instagram
+              </a>
+              <a
+                href="https://www.facebook.com/profile.php?id=61583330705993"
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                data-testid="link-social-facebook"
+              >
+                Facebook
               </a>
             </div>
           </div>
