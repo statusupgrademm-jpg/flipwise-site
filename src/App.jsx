@@ -12,9 +12,9 @@ function isCloudinaryUrl(url) {
   return typeof url === "string" && url.startsWith(CLOUDINARY_HOST);
 }
 
-// Insert transforms after `/image/upload/` (e.g. f_auto,q_auto:eco,dpr_auto,w_1200)
-function cld(url, { w, q = "auto:low", f = "auto", dpr = "auto" } = {}) {
-  if (!isCloudinaryUrl(url)) return url; // leave non-Cloudinary as-is
+// Insert transforms after `/image/upload/`
+function cld(url, { w, h, c = "fill", q = "auto:low", f = "auto", dpr = "auto" } = {}) {
+  if (!isCloudinaryUrl(url)) return url;
   const marker = "/image/upload/";
   const i = url.indexOf(marker);
   if (i === -1) return url;
@@ -22,15 +22,16 @@ function cld(url, { w, q = "auto:low", f = "auto", dpr = "auto" } = {}) {
   const rest = url.slice(i + marker.length);
   const parts = [`f_${f}`, `q_${q}`, `dpr_${dpr}`];
   if (w) parts.push(`w_${w}`);
+  if (h) parts.push(`h_${h}`);
+  if (w || h) parts.push(`c_${c}`);
   return `${prefix}${parts.join(",")}/${rest}`;
 }
 
-// Build srcset string for the given widths
-function cldSrcSet(url, widths = [480, 768, 1024, 1280, 1600]) {
+// Build srcset string for the given widths (optionally forcing format)
+function cldSrcSet(url, widths = [480, 768, 1024, 1280, 1600], { f = "auto", q = "auto:low" } = {}) {
   if (!isCloudinaryUrl(url)) return "";
-  return widths.map(w => `${cld(url, { w })} ${w}w`).join(", ");
+  return widths.map((w) => `${cld(url, { w, f, q })} ${w}w`).join(", ");
 }
-
 
 function isNonEmptyString(v) {
   return typeof v === 'string' && v.trim().length > 0;
@@ -130,37 +131,42 @@ function useImageWithFallback(src) {
 }
 
 function SmartImage({ src, alt = "", className = "", sizes, ...rest }) {
-  // Reuse your existing fallback resolver:
-  const url = useImageWithFallback(src); // returns a working URL (may be fallback local)
-
-  // If it's Cloudinary, build responsive sets; otherwise just use the resolved URL
+  const url = useImageWithFallback(src);
   const isCLD = isCloudinaryUrl(url);
-  const srcSet = isCLD ? cldSrcSet(url) : undefined;
-  const srcAvif = isCLD ? cld(url, { w: 1280, f: "avif" }) : undefined;
-  const srcWebp = isCLD ? cld(url, { w: 1280, f: "webp" }) : undefined;
-  const srcFallback = isCLD ? cld(url, { w: 1280 }) : url;
 
-  // Sensible default sizes: card images are ~33vw on desktop, ~50vw tablet, 100vw mobile
+  // default sizes (cards ~33vw desktop, ~50vw tablet, 100vw mobile)
   const sizesAttr = sizes || "(min-width:1024px) 33vw, (min-width:768px) 50vw, 100vw";
 
-  return isCLD ? (
-    <picture>
-      <source type="image/avif" srcSet={srcSet?.replaceAll(" f_auto", " f_avif")} sizes={sizesAttr} />
-      <source type="image/webp" srcSet={srcSet?.replaceAll(" f_auto", " f_webp")} sizes={sizesAttr} />
-      <img
-        src={srcFallback}
-        srcSet={srcSet}
-        sizes={sizesAttr}
-        alt={alt}
-        className={className}
-        loading="lazy"
-        decoding="async"
-        {...rest}
-      />
-    </picture>
-  ) : (
+  if (isCLD) {
+    const srcSetAvif = cldSrcSet(url, [480, 768, 1024, 1280, 1600], { f: "avif" });
+    const srcSetWebp = cldSrcSet(url, [480, 768, 1024, 1280, 1600], { f: "webp" });
+    const srcSetAuto = cldSrcSet(url, [480, 768, 1024, 1280, 1600], { f: "auto" });
+    const fallback = cld(url, { w: 1280 });
+
+    return (
+      <picture>
+        {/* modern formats first */}
+        <source type="image/avif" srcSet={srcSetAvif} sizes={sizesAttr} />
+        <source type="image/webp" srcSet={srcSetWebp} sizes={sizesAttr} />
+        {/* auto fallback */}
+        <img
+          src={fallback}
+          srcSet={srcSetAuto}
+          sizes={sizesAttr}
+          alt={alt}
+          className={className}
+          loading="lazy"
+          decoding="async"
+          {...rest}
+        />
+      </picture>
+    );
+  }
+
+  // non-Cloudinary simple img
+  return (
     <img
-      src={srcFallback}
+      src={url}
       alt={alt}
       className={className}
       loading="lazy"
@@ -169,7 +175,6 @@ function SmartImage({ src, alt = "", className = "", sizes, ...rest }) {
     />
   );
 }
-
 
 function getPostFallback() {
   return FALLBACK_LOCAL;
@@ -273,14 +278,12 @@ function BlogCard({ post, onOpen }) {
   const p = safePostShape(post);
   if (!p) return null;
 
-  const bgSrc = useImageWithFallback(p.image);
-
   return (
     <article className="overflow-hidden hover-elevate active-elevate-2 transition-all h-full flex flex-col rounded-lg border border-border bg-card shadow-sm">
       <div className="aspect-video relative overflow-hidden">
         <AnimatePresence mode="wait">
           <motion.div
-            key={bgSrc}
+            key={p.image}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -288,7 +291,7 @@ function BlogCard({ post, onOpen }) {
             className="absolute inset-0"
           >
             <SmartImage
-              src={bgSrc}
+              src={p.image}
               alt={p.title}
               className="absolute inset-0 w-full h-full object-cover"
               sizes="(min-width:1024px) 33vw, (min-width:768px) 50vw, 100vw"
@@ -306,7 +309,7 @@ function BlogCard({ post, onOpen }) {
 
         <button
           type="button"
-          onClick={() => typeof onOpen === 'function' ? onOpen(p) : null}
+          onClick={() => (typeof onOpen === 'function' ? onOpen(p) : null)}
           className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none ring-offset-background border border-input hover-elevate active-elevate-2 h-9 px-4 py-2 w-full"
           aria-label={`Read: ${p.title}`}
         >
@@ -321,7 +324,7 @@ const POSTS_PER_PAGE = 10;
 
 function BlogIndex({ posts, onOpen, pageParam = 1, onPageChange }) {
   const list = Array.isArray(posts) ? posts : [];
-  const pageSize = 9; // adjust as needed
+  const pageSize = 9;
   const [page, setPage] = useState(pageParam || 1);
 
   useEffect(() => {
@@ -338,7 +341,6 @@ function BlogIndex({ posts, onOpen, pageParam = 1, onPageChange }) {
     onPageChange?.(clamped);
   };
 
-  // Build numbered buttons with ellipses that jump ±5 pages
   const buildPageButtons = () => {
     const btns = [];
     const cur = page;
@@ -452,9 +454,6 @@ function BlogIndex({ posts, onOpen, pageParam = 1, onPageChange }) {
     </section>
   );
 }
-
-
-
 
 function BlogPost({ post, calendlyUrl, navigate }) {
   const p = safePostShape(post);
@@ -585,7 +584,6 @@ function BlogPost({ post, calendlyUrl, navigate }) {
     </article>
   );
 }
-
 
 function usePosts() {
   const [posts, setPosts] = useState([]);
