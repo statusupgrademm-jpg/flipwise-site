@@ -101,6 +101,33 @@ async function createMediaContainer({ igUserId, pageToken, mediaUrl, caption, is
   return j.id;
 }
 
+async function waitForContainerReady({ igUserId, pageToken, creationId, maxAttempts = 10, delayMs = 3000 }) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const url = `https://graph.facebook.com/v24.0/${creationId}?fields=status_code,status&access_token=${pageToken}`;
+    const r = await fetch(url);
+    const j = await r.json();
+
+    if (!r.ok) {
+      throw new Error(`IG container status failed: ${r.status} ${JSON.stringify(j)}`);
+    }
+
+    const statusCode = j.status_code || j.status;
+    console.log(`Container status (attempt ${attempt}):`, statusCode);
+
+    if (statusCode === "FINISHED") return;
+
+    if (statusCode === "ERROR") {
+      throw new Error(`IG container entered ERROR state: ${JSON.stringify(j)}`);
+    }
+
+    // still IN_PROGRESS or something similar – wait and retry
+    await new Promise(res => setTimeout(res, delayMs));
+  }
+
+  throw new Error(`IG container not ready after ${maxAttempts} attempts`);
+}
+
+
 async function publishMedia({ igUserId, pageToken, creationId }) {
   const r = await fetch(`https://graph.facebook.com/v24.0/${igUserId}/media_publish`, {
     method: "POST",
@@ -126,17 +153,35 @@ async function main() {
   const caption = buildCaption();
   const title = SOCIAL_TITLE || POST_TITLE || (caption || "").split("\n")[0] || "";
 
-  // 1080x1350  (use 1080x1080 if you prefer square)
-  const jpgBuffer = await renderSocialImage(MEDIA_URL, { width: 1080, height: 1350, title, sub: "READ OUR BLOG POST" });
+  const jpgBuffer = await renderSocialImage(MEDIA_URL, {
+    width: 1080,
+    height: 1350,
+    title,
+    sub: "READ OUR BLOG POST",
+  });
   const finalUrl = await signedCloudinaryUploadJpgBuffer(jpgBuffer);
 
   const pageToken = await getPageToken();
   const igUserId = await getInstagramUserId({ pageId: PAGE_ID, pageToken });
 
-  const creationId = await createMediaContainer({ igUserId, pageToken, mediaUrl: finalUrl, caption, isVideo: false });
+  const creationId = await createMediaContainer({
+    igUserId,
+    pageToken,
+    mediaUrl: finalUrl,
+    caption,
+    isVideo: false,
+  });
+
+  // 🔹 NEW: wait until IG says container is ready
+  await waitForContainerReady({ igUserId, pageToken, creationId });
+
   const mediaId = await publishMedia({ igUserId, pageToken, creationId });
 
   console.log(JSON.stringify({ ok: true, igMediaId: mediaId, finalUrl }, null, 2));
 }
 
-main().catch(err => { console.error(err); process.exit(1); });
+main().catch(err => {
+  console.error(err);
+  process.exit(1);
+});
+
